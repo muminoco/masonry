@@ -1,197 +1,51 @@
 // core/masonry.js
+import { DEFAULT_CONFIG, DEFAULT_STATE, CSS_CLASSES } from './config.js';
+import { 
+  getContainer, 
+  getBreakpointConfig, 
+  applyDefaultStyles, 
+  updateBreakpointClasses,
+  setupMediaListeners,
+  removeMediaListeners,
+  resetItemStyles
+} from './utils.js';
+import { 
+  EventManager, 
+  MasonryEventDispatcher, 
+  PluginManager, 
+  createDebouncedHandler 
+} from './events.js';
+
 class MasonryLayout {
   constructor(container, options = {}) {
     console.log('🧱 Masonry: Creating new instance...', { container, options });
     
-    this.container = typeof container === 'string' 
-      ? document.querySelector(container) 
-      : container;
-    
-    if (!this.container) {
-      console.error('🧱 Masonry: Container not found:', container);
-      throw new Error('Masonry container not found');
-    }
-    
-    console.log('🧱 Masonry: Container found:', this.container);
+    this.container = getContainer(container);
 
     // Check for required data attribute
     if (!this.container.dataset.masonry && this.container.getAttribute('data-masonry') === null) {
       console.warn('🧱 Masonry: Container should have data-masonry attribute for best results');
     }
 
-    // Default configuration (will be overridden by CSS properties)
+    // Configuration
     this.config = {
-      itemSelector: ':scope > *', // All direct children
-      transitionDuration: 300,
+      ...DEFAULT_CONFIG,
       ...options
     };
 
-    // Default CSS property values (used as fallback)
-    this.defaults = {
-      '--masonry-desktop-min-width': '20rem',
-      '--masonry-desktop-columns': '', // Optional: for constrained containers
-      '--masonry-gap-x': '1.25rem', // 20px equivalent
-      '--masonry-gap-y': '1.25rem', // 20px equivalent
-      '--masonry-tablet-columns': '2',
-      '--masonry-mobile-landscape-columns': '2',
-      '--masonry-mobile-portrait-columns': '1'
-    };
-
     // State management
-    this.state = {
-      isInitialized: false,
-      isLayoutInProgress: false,
-      columns: [],
-      items: [],
-      containerWidth: 0,
-      columnMinWidth: 0,
-      actualColumnWidth: 0,
-      actualColumns: 0,
-      gapX: 0,
-      gapY: 0,
-      currentBreakpoint: null
-    };
+    this.state = { ...DEFAULT_STATE };
+
+    // Event system
+    this.eventManager = new EventManager();
+    this.eventDispatcher = new MasonryEventDispatcher(this.container);
+    this.pluginManager = new PluginManager().setContext(this);
 
     // Event handlers (bound for proper context)
-    this.handleResize = this.handleResize.bind(this);
-    this.handleItemLoad = this.handleItemLoad.bind(this);
-
-    // Plugin system for extensibility
-    this.plugins = new Map();
-    this.hooks = {
-      beforeInit: [],
-      afterInit: [],
-      beforeLayout: [],
-      afterLayout: [],
-      beforeDestroy: [],
-      afterDestroy: []
-    };
+    this.handleResize = createDebouncedHandler(this._handleResize.bind(this), 150);
+    this.handleItemLoad = createDebouncedHandler(this._handleItemLoad.bind(this), 100);
 
     this.init();
-  }
-
-  /**
-   * Get CSS custom property value with fallback
-   */
-  getCSSProperty(property, fallback = null) {
-    const computedStyle = getComputedStyle(this.container);
-    let value = computedStyle.getPropertyValue(property).trim();
-    
-    if (!value && fallback) {
-      value = this.defaults[property] || fallback;
-      
-      // Log missing property for user awareness
-      console.info(`Masonry: Using default value "${value}" for ${property}. Consider setting this in your CSS.`);
-    }
-    
-    return value;
-  }
-
-  /**
-   * Convert CSS unit values to pixels
-   */
-  convertToPixels(value, property = '') {
-    if (!value) return 0;
-    
-    // Already in pixels
-    if (value.endsWith('px')) {
-      return parseFloat(value);
-    }
-    
-    // Convert rem to pixels
-    if (value.endsWith('rem')) {
-      const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
-      return parseFloat(value) * rootFontSize;
-    }
-    
-    // Convert em to pixels (relative to container font size)
-    if (value.endsWith('em')) {
-      const containerFontSize = parseFloat(getComputedStyle(this.container).fontSize);
-      return parseFloat(value) * containerFontSize;
-    }
-    
-    // Unitless value (assume pixels for gaps, columns for column counts)
-    const numericValue = parseFloat(value);
-    if (!isNaN(numericValue)) {
-      if (property.includes('gap') || property.includes('width')) {
-        console.warn(`Masonry: Unitless value "${value}" for ${property}. Assuming pixels. Please specify units (px, rem, or em).`);
-        return numericValue;
-      }
-      return numericValue;
-    }
-    
-    console.error(`Masonry: Invalid CSS value "${value}" for ${property}`);
-    return 0;
-  }
-
-  /**
-   * Determine current breakpoint based on window width
-   */
-  getCurrentBreakpoint() {
-    const width = window.innerWidth;
-    
-    // Standard breakpoints (matching Webflow defaults)
-    if (width <= 479) return 'mobile-portrait';
-    if (width <= 767) return 'mobile-landscape';
-    if (width <= 991) return 'tablet';
-    return 'desktop';
-  }
-
-  /**
-   * Get breakpoint configuration with min-width vs column count detection
-   */
-  getBreakpointConfig() {
-    const breakpoint = this.getCurrentBreakpoint();
-    this.state.currentBreakpoint = breakpoint;
-    
-    let config = {};
-    
-    // Get values with cascading fallback
-    const desktopMinWidth = this.getCSSProperty('--masonry-desktop-min-width');
-    const desktopColumns = this.getCSSProperty('--masonry-desktop-columns');
-    const gapX = this.getCSSProperty('--masonry-gap-x');
-    const gapY = this.getCSSProperty('--masonry-gap-y');
-    
-    // Column configuration with cascading
-    let columns;
-    if (breakpoint === 'desktop') {
-      // Check if user specified desktop columns (for constrained containers)
-      if (desktopColumns && parseInt(desktopColumns)) {
-        config.columns = parseInt(desktopColumns);
-        config.useMinWidth = false;
-        console.log('🧱 Masonry: Using desktop columns mode:', config.columns);
-      } else {
-        // Desktop uses min-width-based calculation
-        config.useMinWidth = true;
-        config.columnMinWidth = this.convertToPixels(desktopMinWidth, '--masonry-desktop-min-width');
-        console.log('🧱 Masonry: Using desktop min-width mode:', config.columnMinWidth + 'px');
-      }
-    } else {
-      // Mobile/tablet use column counts with cascading
-      const tabletColumns = this.getCSSProperty('--masonry-tablet-columns');
-      const mobileLandscapeColumns = this.getCSSProperty('--masonry-mobile-landscape-columns');
-      const mobilePortraitColumns = this.getCSSProperty('--masonry-mobile-portrait-columns');
-      
-      switch (breakpoint) {
-        case 'tablet':
-          columns = parseInt(tabletColumns) || parseInt(mobileLandscapeColumns) || parseInt(mobilePortraitColumns) || 2;
-          break;
-        case 'mobile-landscape':
-          columns = parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || parseInt(mobilePortraitColumns) || 2;
-          break;
-        case 'mobile-portrait':
-          columns = parseInt(mobilePortraitColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || 1;
-          break;
-      }
-      
-      config.columns = columns;
-      config.useMinWidth = false;
-    }
-    
-    config.gapX = this.convertToPixels(gapX, '--masonry-gap-x');
-    config.gapY = this.convertToPixels(gapY, '--masonry-gap-y');
-    
-    return config;
   }
 
   /**
@@ -199,7 +53,7 @@ class MasonryLayout {
    */
   async init() {
     try {
-      await this.runHooks('beforeInit');
+      await this.eventManager.runHooks('beforeInit', this);
       
       this.setupContainer();
       this.getItems();
@@ -209,12 +63,9 @@ class MasonryLayout {
       await this.layout();
       
       this.state.isInitialized = true;
-      await this.runHooks('afterInit');
+      await this.eventManager.runHooks('afterInit', this);
       
-      // Dispatch custom event
-      this.container.dispatchEvent(new CustomEvent('masonry:initialized', {
-        detail: { instance: this }
-      }));
+      this.eventDispatcher.dispatchInitialized(this);
       
     } catch (error) {
       console.error('Masonry initialization failed:', error);
@@ -223,46 +74,11 @@ class MasonryLayout {
   }
 
   /**
-   * Apply default CSS properties if missing
-   */
-  applyDefaultStyles() {
-    const computedStyle = getComputedStyle(this.container);
-    let hasCustomProperties = false;
-    
-    // Check if any custom properties are set
-    Object.keys(this.defaults).forEach(property => {
-      if (computedStyle.getPropertyValue(property).trim()) {
-        hasCustomProperties = true;
-      }
-    });
-    
-    // If no custom properties found, log helpful message
-    if (!hasCustomProperties) {
-      console.group('📐 Masonry CSS Properties Missing');
-      console.info('No masonry CSS custom properties detected. Using defaults:');
-      Object.entries(this.defaults).forEach(([prop, value]) => {
-        console.info(`${prop}: ${value}`);
-      });
-      console.info('💡 Add these properties to your CSS for full control:');
-      console.info(`
-.masonry-container {
-  --masonry-desktop-min-width: 20rem;
-  --masonry-gap-x: 1.25rem;
-  --masonry-gap-y: 1.25rem;
-  --masonry-tablet-columns: 2;
-  --masonry-mobile-landscape-columns: 2;
-  --masonry-mobile-portrait-columns: 1;
-}`);
-      console.groupEnd();
-    }
-  }
-
-  /**
    * Setup container styles and properties
    */
   setupContainer() {
     this.container.style.position = 'relative';
-    this.applyDefaultStyles();
+    applyDefaultStyles(this.container);
   }
 
   /**
@@ -289,7 +105,8 @@ class MasonryLayout {
     this.state.containerWidth = this.container.clientWidth - paddingLeft - paddingRight;
     
     // Get breakpoint configuration
-    const config = this.getBreakpointConfig();
+    const config = getBreakpointConfig(this.container);
+    this.state.currentBreakpoint = config.breakpoint;
     this.state.gapX = config.gapX;
     this.state.gapY = config.gapY;
     
@@ -328,26 +145,7 @@ class MasonryLayout {
     this.state.columns = new Array(this.state.actualColumns).fill(0);
     
     // Add breakpoint class for CSS targeting
-    this.updateBreakpointClasses();
-  }
-
-  /**
-   * Update CSS classes on container for breakpoint targeting
-   */
-  updateBreakpointClasses() {
-    const container = this.container;
-    const breakpoints = ['mobile-portrait', 'mobile-landscape', 'tablet', 'desktop'];
-    
-    // Remove old breakpoint classes
-    breakpoints.forEach(bp => {
-      container.classList.remove(`masonry_${bp}`);
-    });
-    
-    // Add current breakpoint class
-    if (this.state.currentBreakpoint) {
-      const className = `masonry_${this.state.currentBreakpoint}`;
-      container.classList.add(className);
-    }
+    updateBreakpointClasses(this.container, this.state.currentBreakpoint);
   }
 
   /**
@@ -356,15 +154,7 @@ class MasonryLayout {
   setupEventListeners() {
     // Listen for image loads and video loads
     this.state.items.forEach(item => {
-      const media = item.querySelectorAll('img, video');
-      media.forEach(element => {
-        if (element.tagName === 'IMG' && !element.complete) {
-          element.addEventListener('load', this.handleItemLoad);
-          element.addEventListener('error', this.handleItemLoad);
-        } else if (element.tagName === 'VIDEO') {
-          element.addEventListener('loadedmetadata', this.handleItemLoad);
-        }
-      });
+      setupMediaListeners(item, this.handleItemLoad);
     });
 
     // Listen for window resize
@@ -372,60 +162,45 @@ class MasonryLayout {
   }
 
   /**
-   * Handle item load events
+   * Handle item load events (internal method)
    */
-  handleItemLoad(event) {
-    // Debounce layout calls
-    if (this.layoutTimeout) {
-      clearTimeout(this.layoutTimeout);
-    }
-    
-    this.layoutTimeout = setTimeout(() => {
-      this.layout();
-    }, 100); // Reduced timeout for more responsive loading
+  _handleItemLoad(event) {
+    this.layout();
   }
 
   /**
-   * Handle window resize with breakpoint detection
+   * Handle window resize with breakpoint detection (internal method)
    */
-  handleResize() {
-    if (this.resizeTimeout) {
-      clearTimeout(this.resizeTimeout);
+  _handleResize() {
+    console.log('🧱 Masonry: Handling resize...');
+    
+    const oldBreakpoint = this.state.currentBreakpoint;
+    const oldContainerWidth = this.state.containerWidth;
+    const oldColumns = this.state.actualColumns;
+    
+    // Recalculate everything from scratch
+    this.calculateDimensions();
+    
+    console.log('🧱 Masonry: Resize calculations:', {
+      breakpointChange: `${oldBreakpoint} → ${this.state.currentBreakpoint}`,
+      widthChange: `${oldContainerWidth}px → ${this.state.containerWidth}px`,
+      columnChange: `${oldColumns} → ${this.state.actualColumns}`,
+      actualColumnWidth: `${this.state.actualColumnWidth}px`,
+      gaps: `${this.state.gapX}px x ${this.state.gapY}px`
+    });
+    
+    // Dispatch breakpoint change event if changed
+    if (oldBreakpoint !== this.state.currentBreakpoint) {
+      this.eventDispatcher.dispatchBreakpointChange(
+        oldBreakpoint,
+        this.state.currentBreakpoint,
+        window.innerWidth,
+        this
+      );
     }
     
-    this.resizeTimeout = setTimeout(() => {
-      console.log('🧱 Masonry: Handling resize...');
-      
-      const oldBreakpoint = this.state.currentBreakpoint;
-      const oldContainerWidth = this.state.containerWidth;
-      const oldColumns = this.state.actualColumns;
-      
-      // Recalculate everything from scratch
-      this.calculateDimensions();
-      
-      console.log('🧱 Masonry: Resize calculations:', {
-        breakpointChange: `${oldBreakpoint} → ${this.state.currentBreakpoint}`,
-        widthChange: `${oldContainerWidth}px → ${this.state.containerWidth}px`,
-        columnChange: `${oldColumns} → ${this.state.actualColumns}`,
-        actualColumnWidth: `${this.state.actualColumnWidth}px`,
-        gaps: `${this.state.gapX}px x ${this.state.gapY}px`
-      });
-      
-      // Dispatch breakpoint change event if changed
-      if (oldBreakpoint !== this.state.currentBreakpoint) {
-        this.container.dispatchEvent(new CustomEvent('masonry:breakpointChange', {
-          detail: {
-            from: oldBreakpoint,
-            to: this.state.currentBreakpoint,
-            windowWidth: window.innerWidth,
-            instance: this
-          }
-        }));
-      }
-      
-      // Always re-layout after resize
-      this.layout();
-    }, 150); // Slightly increased debounce for better performance
+    // Always re-layout after resize
+    this.layout();
   }
 
   /**
@@ -439,7 +214,7 @@ class MasonryLayout {
     this.state.isLayoutInProgress = true;
     
     try {
-      await this.runHooks('beforeLayout');
+      await this.eventManager.runHooks('beforeLayout', this);
       
       // Reset column heights
       this.state.columns.fill(0);
@@ -453,17 +228,14 @@ class MasonryLayout {
       const maxColumnHeight = Math.max(...this.state.columns);
       this.container.style.height = `${maxColumnHeight}px`;
       
-      await this.runHooks('afterLayout');
+      await this.eventManager.runHooks('afterLayout', this);
       
-      // Dispatch layout complete event
-      this.container.dispatchEvent(new CustomEvent('masonry:layoutComplete', {
-        detail: { 
-          instance: this,
-          containerHeight: maxColumnHeight,
-          columns: this.state.actualColumns,
-          breakpoint: this.state.currentBreakpoint
-        }
-      }));
+      this.eventDispatcher.dispatchLayoutComplete(
+        this,
+        maxColumnHeight,
+        this.state.actualColumns,
+        this.state.currentBreakpoint
+      );
       
     } finally {
       this.state.isLayoutInProgress = false;
@@ -498,7 +270,7 @@ class MasonryLayout {
     this.state.columns[shortestColumnIndex] += itemHeight + this.state.gapY;
     
     // Add positioned class for styling hooks
-    item.classList.add('masonry_item-positioned');
+    item.classList.add(CSS_CLASSES.itemPositioned);
   }
 
   /**
@@ -510,17 +282,7 @@ class MasonryLayout {
     // Setup new items
     newItems.forEach(item => {
       item.style.position = 'absolute';
-      
-      // Setup media load listeners
-      const media = item.querySelectorAll('img, video');
-      media.forEach(element => {
-        if (element.tagName === 'IMG' && !element.complete) {
-          element.addEventListener('load', this.handleItemLoad);
-          element.addEventListener('error', this.handleItemLoad);
-        } else if (element.tagName === 'VIDEO') {
-          element.addEventListener('loadedmetadata', this.handleItemLoad);
-        }
-      });
+      setupMediaListeners(item, this.handleItemLoad);
     });
     
     // Add to items array
@@ -535,14 +297,7 @@ class MasonryLayout {
     const maxColumnHeight = Math.max(...this.state.columns);
     this.container.style.height = `${maxColumnHeight}px`;
     
-    // Dispatch event
-    this.container.dispatchEvent(new CustomEvent('masonry:itemsAdded', {
-      detail: { 
-        instance: this,
-        newItems: newItems,
-        totalItems: this.state.items.length
-      }
-    }));
+    this.eventDispatcher.dispatchItemsAdded(this, newItems, this.state.items.length);
   }
 
   /**
@@ -567,14 +322,7 @@ class MasonryLayout {
     // Re-layout remaining items
     await this.layout();
     
-    // Dispatch event
-    this.container.dispatchEvent(new CustomEvent('masonry:itemsRemoved', {
-      detail: { 
-        instance: this,
-        removedItems: itemsToRemove,
-        totalItems: this.state.items.length
-      }
-    }));
+    this.eventDispatcher.dispatchItemsRemoved(this, itemsToRemove, this.state.items.length);
   }
 
   /**
@@ -590,59 +338,28 @@ class MasonryLayout {
    * Plugin system - register plugin
    */
   use(plugin, options = {}) {
-    if (typeof plugin === 'function') {
-      plugin(this, options);
-    } else if (plugin && typeof plugin.install === 'function') {
-      plugin.install(this, options);
-    }
-    return this;
+    return this.pluginManager.use(plugin, options);
   }
 
   /**
    * Hook system - add hook
    */
   addHook(hookName, callback) {
-    if (this.hooks[hookName]) {
-      this.hooks[hookName].push(callback);
-    }
-    return this;
-  }
-
-  /**
-   * Run hooks
-   */
-  async runHooks(hookName) {
-    if (this.hooks[hookName]) {
-      for (const callback of this.hooks[hookName]) {
-        await callback(this);
-      }
-    }
+    return this.eventManager.addHook(hookName, callback);
   }
 
   /**
    * Destroy instance
    */
   async destroy() {
-    await this.runHooks('beforeDestroy');
+    await this.eventManager.runHooks('beforeDestroy', this);
     
     // Remove event listeners
     window.removeEventListener('resize', this.handleResize);
     
     this.state.items.forEach(item => {
-      const media = item.querySelectorAll('img, video');
-      media.forEach(element => {
-        element.removeEventListener('load', this.handleItemLoad);
-        element.removeEventListener('error', this.handleItemLoad);
-        element.removeEventListener('loadedmetadata', this.handleItemLoad);
-      });
-      
-      // Reset item styles
-      item.style.position = '';
-      item.style.left = '';
-      item.style.top = '';
-      item.style.width = '';
-      item.style.height = '';
-      item.classList.remove('masonry_item-positioned');
+      removeMediaListeners(item, this.handleItemLoad);
+      resetItemStyles(item);
     });
     
     // Reset container styles
@@ -650,24 +367,18 @@ class MasonryLayout {
     this.container.style.position = '';
     
     // Remove breakpoint classes
-    const breakpoints = ['mobile-portrait', 'mobile-landscape', 'tablet', 'desktop'];
-    breakpoints.forEach(bp => {
-      this.container.classList.remove(`masonry_${bp}`);
-    });
+    updateBreakpointClasses(this.container, null);
     
-    // Clear timeouts
-    if (this.layoutTimeout) clearTimeout(this.layoutTimeout);
-    if (this.resizeTimeout) clearTimeout(this.resizeTimeout);
+    // Clear timeouts (handled by debounced handlers)
     
     // Reset state
     this.state.isInitialized = false;
     this.state.items = [];
     this.state.columns = [];
     
-    await this.runHooks('afterDestroy');
+    await this.eventManager.runHooks('afterDestroy', this);
     
-    // Dispatch destroy event
-    this.container.dispatchEvent(new CustomEvent('masonry:destroyed'));
+    this.eventDispatcher.dispatchDestroyed();
   }
 
   /**
@@ -676,7 +387,7 @@ class MasonryLayout {
   getState() {
     return { 
       ...this.state,
-      breakpointConfig: this.getBreakpointConfig()
+      breakpointConfig: getBreakpointConfig(this.container)
     };
   }
 
@@ -697,12 +408,12 @@ class MasonryLayout {
 }
 
 // Factory function for easier instantiation
-function createMasonry(container, options) {
+export function createMasonry(container, options) {
   return new MasonryLayout(container, options);
 }
 
 // Auto-initialize based on data attributes
-function autoInit() {
+export function autoInit() {
   console.log('🧱 Masonry: Starting auto-initialization...');
   
   const containers = document.querySelectorAll('[data-masonry]');
@@ -730,6 +441,9 @@ function autoInit() {
   console.log(`🧱 Masonry: Auto-initialization complete. ${instances.length} instance(s) created.`);
   return instances;
 }
+
+// Export the main class
+export { MasonryLayout };
 
 // Export for different module systems
 if (typeof module !== 'undefined' && module.exports) {
