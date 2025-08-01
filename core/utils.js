@@ -159,21 +159,23 @@ export function getBreakpointConfig(container) {
       config.columnMinWidth = convertToPixels(breakpointMinWidth, `--masonry-${breakpoint}-min-width`);
       console.log(`🧱 Masonry: Using ${breakpoint} min-width mode:`, config.columnMinWidth + 'px');
     } else {
-      // Use column count approach with cascading fallback
-      const tabletColumns = getCSSProperty(container, '--masonry-tablet-columns');
-      const mobileLandscapeColumns = getCSSProperty(container, '--masonry-mobile-landscape-columns');
-      const mobilePortraitColumns = getCSSProperty(container, '--masonry-mobile-portrait-columns');
-      
+      // Use column count approach with proper cascading fallback
       let columns;
       switch (breakpoint) {
         case 'tablet':
-          columns = parseInt(breakpointColumns) || parseInt(tabletColumns) || parseInt(mobileLandscapeColumns) || parseInt(mobilePortraitColumns) || 2;
+          columns = parseInt(breakpointColumns) || parseInt(getCSSProperty(container, '--masonry-tablet-columns')) || 
+                   parseInt(getCSSProperty(container, '--masonry-mobile-landscape-columns')) || 
+                   parseInt(getCSSProperty(container, '--masonry-mobile-portrait-columns')) || 2;
           break;
         case 'mobile-landscape':
-          columns = parseInt(breakpointColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || parseInt(mobilePortraitColumns) || 2;
+          columns = parseInt(breakpointColumns) || parseInt(getCSSProperty(container, '--masonry-mobile-landscape-columns')) || 
+                   parseInt(getCSSProperty(container, '--masonry-tablet-columns')) || 
+                   parseInt(getCSSProperty(container, '--masonry-mobile-portrait-columns')) || 2;
           break;
         case 'mobile-portrait':
-          columns = parseInt(breakpointColumns) || parseInt(mobilePortraitColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || 1;
+          columns = parseInt(breakpointColumns) || parseInt(getCSSProperty(container, '--masonry-mobile-portrait-columns')) || 
+                   parseInt(getCSSProperty(container, '--masonry-mobile-landscape-columns')) || 
+                   parseInt(getCSSProperty(container, '--masonry-tablet-columns')) || 1;
           break;
       }
       
@@ -182,15 +184,43 @@ export function getBreakpointConfig(container) {
     }
   }
   
-  // Enhanced gap configuration with per-breakpoint controls
+  // Enhanced gap configuration with proper cascading
   const breakpointGapX = getCSSProperty(container, `--masonry-${breakpoint}-gap-x`);
   const breakpointGapY = getCSSProperty(container, `--masonry-${breakpoint}-gap-y`);
-  const legacyGapX = getCSSProperty(container, '--masonry-gap-x');
-  const legacyGapY = getCSSProperty(container, '--masonry-gap-y');
   
-  // Use breakpoint-specific gaps if available, otherwise fall back to legacy gaps
-  config.gapX = convertToPixels(breakpointGapX || legacyGapX, '--masonry-gap-x');
-  config.gapY = convertToPixels(breakpointGapY || legacyGapY, '--masonry-gap-y');
+  // Cascade from larger to smaller breakpoints for gaps
+  let gapX, gapY;
+  switch (breakpoint) {
+    case 'desktop':
+      gapX = breakpointGapX || getCSSProperty(container, '--masonry-desktop-gap-x') || getCSSProperty(container, '--masonry-gap-x');
+      gapY = breakpointGapY || getCSSProperty(container, '--masonry-desktop-gap-y') || getCSSProperty(container, '--masonry-gap-y');
+      break;
+    case 'tablet':
+      gapX = breakpointGapX || getCSSProperty(container, '--masonry-tablet-gap-x') || 
+             getCSSProperty(container, '--masonry-desktop-gap-x') || getCSSProperty(container, '--masonry-gap-x');
+      gapY = breakpointGapY || getCSSProperty(container, '--masonry-tablet-gap-y') || 
+             getCSSProperty(container, '--masonry-desktop-gap-y') || getCSSProperty(container, '--masonry-gap-y');
+      break;
+    case 'mobile-landscape':
+      gapX = breakpointGapX || getCSSProperty(container, '--masonry-mobile-landscape-gap-x') || 
+             getCSSProperty(container, '--masonry-tablet-gap-x') || getCSSProperty(container, '--masonry-desktop-gap-x') || 
+             getCSSProperty(container, '--masonry-gap-x');
+      gapY = breakpointGapY || getCSSProperty(container, '--masonry-mobile-landscape-gap-y') || 
+             getCSSProperty(container, '--masonry-tablet-gap-y') || getCSSProperty(container, '--masonry-desktop-gap-y') || 
+             getCSSProperty(container, '--masonry-gap-y');
+      break;
+    case 'mobile-portrait':
+      gapX = breakpointGapX || getCSSProperty(container, '--masonry-mobile-portrait-gap-x') || 
+             getCSSProperty(container, '--masonry-mobile-landscape-gap-x') || getCSSProperty(container, '--masonry-tablet-gap-x') || 
+             getCSSProperty(container, '--masonry-desktop-gap-x') || getCSSProperty(container, '--masonry-gap-x');
+      gapY = breakpointGapY || getCSSProperty(container, '--masonry-mobile-portrait-gap-y') || 
+             getCSSProperty(container, '--masonry-mobile-landscape-gap-y') || getCSSProperty(container, '--masonry-tablet-gap-y') || 
+             getCSSProperty(container, '--masonry-desktop-gap-y') || getCSSProperty(container, '--masonry-gap-y');
+      break;
+  }
+  
+  config.gapX = convertToPixels(gapX, '--masonry-gap-x');
+  config.gapY = convertToPixels(gapY, '--masonry-gap-y');
   config.breakpoint = breakpoint;
   
   return config;
