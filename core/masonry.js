@@ -22,20 +22,20 @@ class MasonryLayout {
     
     this.container = getContainer(container);
 
+    // Configuration (merge before using)
+    this.config = {
+      ...DEFAULT_CONFIG,
+      ...options
+    };
+
     // Check for required data attribute
-    const expectedAttribute = this.config.autoInitAttribute || 'data-masonry';
-    const expectedValue = this.config.autoInitValue || 'grid';
+    const expectedAttribute = this.config.autoInitAttribute;
+    const expectedValue = this.config.autoInitValue;
     const actualValue = this.container.getAttribute(expectedAttribute);
     
     if (!actualValue) {
       console.warn(`🧱 Masonry: Container should have ${expectedAttribute}="${expectedValue}" attribute for best results`);
     }
-
-    // Configuration
-    this.config = {
-      ...DEFAULT_CONFIG,
-      ...options
-    };
 
     // State management
     this.state = { ...DEFAULT_STATE };
