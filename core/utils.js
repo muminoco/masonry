@@ -1,5 +1,5 @@
 // core/utils.js
-import { DEFAULT_CSS_PROPERTIES, BREAKPOINTS } from './config.js';
+import { DEFAULT_CSS_PROPERTIES, DEFAULT_BREAKPOINTS } from './config.js';
 
 /**
  * Get CSS custom property value with fallback
@@ -56,69 +56,141 @@ export function convertToPixels(value, property = '') {
 }
 
 /**
- * Determine current breakpoint based on window width
+ * Get custom breakpoints from CSS properties or use defaults
  */
-export function getCurrentBreakpoint() {
+export function getCustomBreakpoints(container) {
+  const tabletBreakpoint = getCSSProperty(container, '--masonry-breakpoint-tablet');
+  const mobileLandscapeBreakpoint = getCSSProperty(container, '--masonry-breakpoint-mobile-landscape');
+  const mobilePortraitBreakpoint = getCSSProperty(container, '--masonry-breakpoint-mobile-portrait');
+  
+  const breakpoints = { ...DEFAULT_BREAKPOINTS };
+  
+  // Override with custom breakpoints if provided
+  if (tabletBreakpoint) {
+    const tabletMax = convertToPixels(tabletBreakpoint, '--masonry-breakpoint-tablet');
+    breakpoints.tablet.max = tabletMax;
+    breakpoints.desktop.min = tabletMax + 1;
+  }
+  
+  if (mobileLandscapeBreakpoint) {
+    const mobileLandscapeMax = convertToPixels(mobileLandscapeBreakpoint, '--masonry-breakpoint-mobile-landscape');
+    breakpoints['mobile-landscape'].max = mobileLandscapeMax;
+    breakpoints.tablet.min = mobileLandscapeMax + 1;
+  }
+  
+  if (mobilePortraitBreakpoint) {
+    const mobilePortraitMax = convertToPixels(mobilePortraitBreakpoint, '--masonry-breakpoint-mobile-portrait');
+    breakpoints['mobile-portrait'].max = mobilePortraitMax;
+    breakpoints['mobile-landscape'].min = mobilePortraitMax + 1;
+  }
+  
+  return breakpoints;
+}
+
+/**
+ * Determine current breakpoint based on window width and custom breakpoints
+ */
+export function getCurrentBreakpoint(container = null) {
   const width = window.innerWidth;
   
-  if (width <= 479) return 'mobile-portrait';
-  if (width <= 767) return 'mobile-landscape';
-  if (width <= 991) return 'tablet';
+  // Use custom breakpoints if container is provided, otherwise use defaults
+  const breakpoints = container ? getCustomBreakpoints(container) : DEFAULT_BREAKPOINTS;
+  
+  if (width <= breakpoints['mobile-portrait'].max) return 'mobile-portrait';
+  if (width <= breakpoints['mobile-landscape'].max) return 'mobile-landscape';
+  if (width <= breakpoints.tablet.max) return 'tablet';
   return 'desktop';
 }
 
 /**
- * Get breakpoint configuration with min-width vs column count detection
+ * Get breakpoint configuration with enhanced per-breakpoint controls
  */
 export function getBreakpointConfig(container) {
-  const breakpoint = getCurrentBreakpoint();
+  const breakpoint = getCurrentBreakpoint(container);
   
   let config = {};
   
-  // Get values with cascading fallback
+  // Get desktop configuration
   const desktopMinWidth = getCSSProperty(container, '--masonry-desktop-min-width');
   const desktopColumns = getCSSProperty(container, '--masonry-desktop-columns');
-  const gapX = getCSSProperty(container, '--masonry-gap-x');
-  const gapY = getCSSProperty(container, '--masonry-gap-y');
   
-  // Column configuration with cascading
-  let columns;
+  // Column configuration with enhanced breakpoint-specific controls
   if (breakpoint === 'desktop') {
-    // Check if user specified desktop columns (for constrained containers)
-    if (desktopColumns && parseInt(desktopColumns)) {
+    const hasMinWidth = desktopMinWidth && convertToPixels(desktopMinWidth);
+    const hasColumns = desktopColumns && parseInt(desktopColumns);
+    
+    // Check for conflicting configuration
+    if (hasMinWidth && hasColumns) {
+      console.warn('🧱 Masonry: Both --masonry-desktop-min-width and --masonry-desktop-columns are specified. Using min-width approach and ignoring columns. Remove one property to avoid this warning.');
+    }
+    
+    if (hasMinWidth) {
+      // Min-width takes precedence
+      config.useMinWidth = true;
+      config.columnMinWidth = convertToPixels(desktopMinWidth, '--masonry-desktop-min-width');
+      console.log('🧱 Masonry: Using desktop min-width mode:', config.columnMinWidth + 'px');
+    } else if (hasColumns) {
+      // Use columns only if no min-width specified
       config.columns = parseInt(desktopColumns);
       config.useMinWidth = false;
       console.log('🧱 Masonry: Using desktop columns mode:', config.columns);
     } else {
-      // Desktop uses min-width-based calculation
+      // Default fallback
       config.useMinWidth = true;
-      config.columnMinWidth = convertToPixels(desktopMinWidth, '--masonry-desktop-min-width');
-      console.log('🧱 Masonry: Using desktop min-width mode:', config.columnMinWidth + 'px');
+      config.columnMinWidth = convertToPixels('20rem', '--masonry-desktop-min-width');
+      console.log('🧱 Masonry: Using default desktop min-width mode:', config.columnMinWidth + 'px');
     }
   } else {
-    // Mobile/tablet use column counts with cascading
-    const tabletColumns = getCSSProperty(container, '--masonry-tablet-columns');
-    const mobileLandscapeColumns = getCSSProperty(container, '--masonry-mobile-landscape-columns');
-    const mobilePortraitColumns = getCSSProperty(container, '--masonry-mobile-portrait-columns');
+    // Enhanced breakpoint-specific configuration with conflict resolution
+    const breakpointMinWidth = getCSSProperty(container, `--masonry-${breakpoint}-min-width`);
+    const breakpointColumns = getCSSProperty(container, `--masonry-${breakpoint}-columns`);
     
-    switch (breakpoint) {
-      case 'tablet':
-        columns = parseInt(tabletColumns) || parseInt(mobileLandscapeColumns) || parseInt(mobilePortraitColumns) || 2;
-        break;
-      case 'mobile-landscape':
-        columns = parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || parseInt(mobilePortraitColumns) || 2;
-        break;
-      case 'mobile-portrait':
-        columns = parseInt(mobilePortraitColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || 1;
-        break;
+    const hasMinWidth = breakpointMinWidth && convertToPixels(breakpointMinWidth);
+    const hasColumns = breakpointColumns && parseInt(breakpointColumns);
+    
+    // Check for conflicting configuration
+    if (hasMinWidth && hasColumns) {
+      console.warn(`🧱 Masonry: Both --masonry-${breakpoint}-min-width and --masonry-${breakpoint}-columns are specified. Using min-width approach and ignoring columns. Remove one property to avoid this warning.`);
     }
     
-    config.columns = columns;
-    config.useMinWidth = false;
+    if (hasMinWidth) {
+      // Min-width takes precedence
+      config.useMinWidth = true;
+      config.columnMinWidth = convertToPixels(breakpointMinWidth, `--masonry-${breakpoint}-min-width`);
+      console.log(`🧱 Masonry: Using ${breakpoint} min-width mode:`, config.columnMinWidth + 'px');
+    } else {
+      // Use column count approach with cascading fallback
+      const tabletColumns = getCSSProperty(container, '--masonry-tablet-columns');
+      const mobileLandscapeColumns = getCSSProperty(container, '--masonry-mobile-landscape-columns');
+      const mobilePortraitColumns = getCSSProperty(container, '--masonry-mobile-portrait-columns');
+      
+      let columns;
+      switch (breakpoint) {
+        case 'tablet':
+          columns = parseInt(breakpointColumns) || parseInt(tabletColumns) || parseInt(mobileLandscapeColumns) || parseInt(mobilePortraitColumns) || 2;
+          break;
+        case 'mobile-landscape':
+          columns = parseInt(breakpointColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || parseInt(mobilePortraitColumns) || 2;
+          break;
+        case 'mobile-portrait':
+          columns = parseInt(breakpointColumns) || parseInt(mobilePortraitColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || 1;
+          break;
+      }
+      
+      config.columns = columns;
+      config.useMinWidth = false;
+    }
   }
   
-  config.gapX = convertToPixels(gapX, '--masonry-gap-x');
-  config.gapY = convertToPixels(gapY, '--masonry-gap-y');
+  // Enhanced gap configuration with per-breakpoint controls
+  const breakpointGapX = getCSSProperty(container, `--masonry-${breakpoint}-gap-x`);
+  const breakpointGapY = getCSSProperty(container, `--masonry-${breakpoint}-gap-y`);
+  const legacyGapX = getCSSProperty(container, '--masonry-gap-x');
+  const legacyGapY = getCSSProperty(container, '--masonry-gap-y');
+  
+  // Use breakpoint-specific gaps if available, otherwise fall back to legacy gaps
+  config.gapX = convertToPixels(breakpointGapX || legacyGapX, '--masonry-gap-x');
+  config.gapY = convertToPixels(breakpointGapY || legacyGapY, '--masonry-gap-y');
   config.breakpoint = breakpoint;
   
   return config;
@@ -147,10 +219,10 @@ export function applyDefaultStyles(container) {
     });
     console.info('💡 Add these properties to your CSS for full control:');
     console.info(`
-.masonry-container {
+[data-masonry="grid"] {
   --masonry-desktop-min-width: 20rem;
-  --masonry-gap-x: 1.25rem;
-  --masonry-gap-y: 1.25rem;
+  --masonry-desktop-gap-x: 1.25rem;
+  --masonry-desktop-gap-y: 1.25rem;
   --masonry-tablet-columns: 2;
   --masonry-mobile-landscape-columns: 2;
   --masonry-mobile-portrait-columns: 1;

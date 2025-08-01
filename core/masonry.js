@@ -24,7 +24,7 @@ class MasonryLayout {
 
     // Check for required data attribute
     if (!this.container.dataset.masonry && this.container.getAttribute('data-masonry') === null) {
-      console.warn('🧱 Masonry: Container should have data-masonry attribute for best results');
+      console.warn('🧱 Masonry: Container should have data-masonry="grid" attribute for best results');
     }
 
     // Configuration
@@ -416,11 +416,11 @@ export function createMasonry(container, options) {
 export function autoInit() {
   console.log('🧱 Masonry: Starting auto-initialization...');
   
-  const containers = document.querySelectorAll('[data-masonry]');
-  console.log(`🧱 Masonry: Found ${containers.length} container(s) with [data-masonry]`);
+  const containers = document.querySelectorAll('[data-masonry="grid"]');
+  console.log(`🧱 Masonry: Found ${containers.length} container(s) with [data-masonry="grid"]`);
   
   if (containers.length === 0) {
-    console.warn('🧱 Masonry: No containers found with [data-masonry] attribute. Make sure to add data-masonry="true" to your container element.');
+    console.warn('🧱 Masonry: No containers found with [data-masonry="grid"] attribute. Make sure to add data-masonry="grid" to your container element.');
     return [];
   }
   
