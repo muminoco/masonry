@@ -1,7 +1,10 @@
 // core/config.js
 export const DEFAULT_CONFIG = {
     itemSelector: ':scope > *', // All direct children
-    transitionDuration: 300
+    transitionDuration: 300,
+    // Auto-initialization selector configuration
+    autoInitAttribute: 'data-masonry',
+    autoInitValue: 'grid'
   };
   
   // Default CSS property values (used as fallback)

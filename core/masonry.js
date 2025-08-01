@@ -23,8 +23,12 @@ class MasonryLayout {
     this.container = getContainer(container);
 
     // Check for required data attribute
-    if (!this.container.dataset.masonry && this.container.getAttribute('data-masonry') === null) {
-      console.warn('🧱 Masonry: Container should have data-masonry="grid" attribute for best results');
+    const expectedAttribute = this.config.autoInitAttribute || 'data-masonry';
+    const expectedValue = this.config.autoInitValue || 'grid';
+    const actualValue = this.container.getAttribute(expectedAttribute);
+    
+    if (!actualValue) {
+      console.warn(`🧱 Masonry: Container should have ${expectedAttribute}="${expectedValue}" attribute for best results`);
     }
 
     // Configuration
@@ -413,14 +417,18 @@ export function createMasonry(container, options) {
 }
 
 // Auto-initialize based on data attributes
-export function autoInit() {
+export function autoInit(options = {}) {
+  const config = { ...DEFAULT_CONFIG, ...options };
+  const attribute = config.autoInitAttribute;
+  const value = config.autoInitValue;
+  
   console.log('🧱 Masonry: Starting auto-initialization...');
   
-  const containers = document.querySelectorAll('[data-masonry="grid"]');
-  console.log(`🧱 Masonry: Found ${containers.length} container(s) with [data-masonry="grid"]`);
+  const containers = document.querySelectorAll(`[${attribute}="${value}"]`);
+  console.log(`🧱 Masonry: Found ${containers.length} container(s) with [${attribute}="${value}"]`);
   
   if (containers.length === 0) {
-    console.warn('🧱 Masonry: No containers found with [data-masonry="grid"] attribute. Make sure to add data-masonry="grid" to your container element.');
+    console.warn(`🧱 Masonry: No containers found with [${attribute}="${value}"] attribute. Make sure to add ${attribute}="${value}" to your container element.`);
     return [];
   }
   
@@ -430,7 +438,7 @@ export function autoInit() {
     console.log(`🧱 Masonry: Initializing container ${index + 1}:`, container);
     
     try {
-      const instance = new MasonryLayout(container);
+      const instance = new MasonryLayout(container, config);
       instances.push(instance);
       console.log(`✅ Masonry: Container ${index + 1} initialized successfully`);
     } catch (error) {
