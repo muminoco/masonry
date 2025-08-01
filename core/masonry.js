@@ -28,13 +28,13 @@ class MasonryLayout {
 
     // Default CSS property values (used as fallback)
     this.defaults = {
-      '--masonry-desktop-width': '20rem',
+      '--masonry-desktop-min-width': '20rem',
       '--masonry-desktop-columns': '', // Optional: for constrained containers
       '--masonry-gap-x': '1.25rem', // 20px equivalent
       '--masonry-gap-y': '1.25rem', // 20px equivalent
       '--masonry-tablet-columns': '2',
       '--masonry-mobile-landscape-columns': '2',
-      '--masonry-mobile-portrait-columns': '2'
+      '--masonry-mobile-portrait-columns': '1'
     };
 
     // State management
@@ -44,7 +44,8 @@ class MasonryLayout {
       columns: [],
       items: [],
       containerWidth: 0,
-      columnWidth: 0,
+      columnMinWidth: 0,
+      actualColumnWidth: 0,
       actualColumns: 0,
       gapX: 0,
       gapY: 0,
@@ -129,7 +130,7 @@ class MasonryLayout {
   getCurrentBreakpoint() {
     const width = window.innerWidth;
     
-    // Standard breakpoints
+    // Standard breakpoints (matching Webflow defaults)
     if (width <= 479) return 'mobile-portrait';
     if (width <= 767) return 'mobile-landscape';
     if (width <= 991) return 'tablet';
@@ -137,7 +138,7 @@ class MasonryLayout {
   }
 
   /**
-   * Get breakpoint configuration with container vs width detection
+   * Get breakpoint configuration with min-width vs column count detection
    */
   getBreakpointConfig() {
     const breakpoint = this.getCurrentBreakpoint();
@@ -146,7 +147,7 @@ class MasonryLayout {
     let config = {};
     
     // Get values with cascading fallback
-    const desktopWidth = this.getCSSProperty('--masonry-desktop-width');
+    const desktopMinWidth = this.getCSSProperty('--masonry-desktop-min-width');
     const desktopColumns = this.getCSSProperty('--masonry-desktop-columns');
     const gapX = this.getCSSProperty('--masonry-gap-x');
     const gapY = this.getCSSProperty('--masonry-gap-y');
@@ -157,12 +158,13 @@ class MasonryLayout {
       // Check if user specified desktop columns (for constrained containers)
       if (desktopColumns && parseInt(desktopColumns)) {
         config.columns = parseInt(desktopColumns);
+        config.useMinWidth = false;
         console.log('🧱 Masonry: Using desktop columns mode:', config.columns);
       } else {
-        // Desktop uses width-based calculation
-        config.useWidth = true;
-        config.columnWidth = this.convertToPixels(desktopWidth, '--masonry-desktop-width');
-        console.log('🧱 Masonry: Using desktop width mode:', config.columnWidth + 'px');
+        // Desktop uses min-width-based calculation
+        config.useMinWidth = true;
+        config.columnMinWidth = this.convertToPixels(desktopMinWidth, '--masonry-desktop-min-width');
+        console.log('🧱 Masonry: Using desktop min-width mode:', config.columnMinWidth + 'px');
       }
     } else {
       // Mobile/tablet use column counts with cascading
@@ -178,11 +180,12 @@ class MasonryLayout {
           columns = parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || parseInt(mobilePortraitColumns) || 2;
           break;
         case 'mobile-portrait':
-          columns = parseInt(mobilePortraitColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || 2;
+          columns = parseInt(mobilePortraitColumns) || parseInt(mobileLandscapeColumns) || parseInt(tabletColumns) || 1;
           break;
       }
       
       config.columns = columns;
+      config.useMinWidth = false;
     }
     
     config.gapX = this.convertToPixels(gapX, '--masonry-gap-x');
@@ -243,12 +246,12 @@ class MasonryLayout {
       console.info('💡 Add these properties to your CSS for full control:');
       console.info(`
 .masonry-container {
-  --masonry-desktop-width: 20rem;
+  --masonry-desktop-min-width: 20rem;
   --masonry-gap-x: 1.25rem;
   --masonry-gap-y: 1.25rem;
   --masonry-tablet-columns: 2;
   --masonry-mobile-landscape-columns: 2;
-  --masonry-mobile-portrait-columns: 2;
+  --masonry-mobile-portrait-columns: 1;
 }`);
       console.groupEnd();
     }
@@ -271,12 +274,12 @@ class MasonryLayout {
     // Setup item styles without transitions during resize
     this.state.items.forEach(item => {
       item.style.position = 'absolute';
-      // Don't add transitions - let CSS handle this
+      // Don't force width - let items maintain their natural width within constraints
     });
   }
 
   /**
-   * Calculate container and column dimensions
+   * Calculate container and column dimensions using min-width approach
    */
   calculateDimensions() {
     const containerStyles = getComputedStyle(this.container);
@@ -290,16 +293,35 @@ class MasonryLayout {
     this.state.gapX = config.gapX;
     this.state.gapY = config.gapY;
     
-    if (config.useWidth) {
-      // Desktop: Calculate columns based on column width
-      this.state.columnWidth = config.columnWidth;
-      this.state.actualColumns = Math.floor(
-        (this.state.containerWidth + this.state.gapX) / (this.state.columnWidth + this.state.gapX)
+    if (config.useMinWidth) {
+      // Desktop: Calculate columns based on min-width (Pinterest approach)
+      this.state.columnMinWidth = config.columnMinWidth;
+      
+      // Calculate how many columns fit with min-width constraint
+      const maxPossibleColumns = Math.floor(
+        (this.state.containerWidth + this.state.gapX) / (this.state.columnMinWidth + this.state.gapX)
       ) || 1;
+      
+      // Don't create more columns than items available
+      this.state.actualColumns = Math.min(maxPossibleColumns, this.state.items.length);
+      
+      // Calculate actual column width (can be larger than min-width)
+      this.state.actualColumnWidth = (this.state.containerWidth - (this.state.gapX * (this.state.actualColumns - 1))) / this.state.actualColumns;
+      
+      console.log('🧱 Masonry: Min-width calculation:', {
+        minWidth: this.state.columnMinWidth,
+        maxPossibleColumns: maxPossibleColumns,
+        itemCount: this.state.items.length,
+        actualColumns: this.state.actualColumns,
+        actualColumnWidth: this.state.actualColumnWidth,
+        containerWidth: this.state.containerWidth
+      });
+      
     } else {
-      // Mobile/Tablet: Use fixed column count
-      this.state.actualColumns = config.columns;
-      this.state.columnWidth = (this.state.containerWidth - (this.state.gapX * (this.state.actualColumns - 1))) / this.state.actualColumns;
+      // Mobile/Tablet: Use fixed column count, but don't exceed item count
+      this.state.actualColumns = Math.min(config.columns, this.state.items.length);
+      this.state.actualColumnWidth = (this.state.containerWidth - (this.state.gapX * (this.state.actualColumns - 1))) / this.state.actualColumns;
+      this.state.columnMinWidth = this.state.actualColumnWidth; // For consistency
     }
 
     // Initialize column heights array
@@ -314,7 +336,7 @@ class MasonryLayout {
    */
   updateBreakpointClasses() {
     const container = this.container;
-    const breakpoints = ['mobile_portrait', 'mobile_landscape', 'tablet', 'desktop'];
+    const breakpoints = ['mobile-portrait', 'mobile-landscape', 'tablet', 'desktop'];
     
     // Remove old breakpoint classes
     breakpoints.forEach(bp => {
@@ -323,7 +345,7 @@ class MasonryLayout {
     
     // Add current breakpoint class
     if (this.state.currentBreakpoint) {
-      const className = `masonry_${this.state.currentBreakpoint.replace('-', '_')}`;
+      const className = `masonry_${this.state.currentBreakpoint}`;
       container.classList.add(className);
     }
   }
@@ -332,13 +354,15 @@ class MasonryLayout {
    * Setup event listeners
    */
   setupEventListeners() {
-    // Listen for image loads
+    // Listen for image loads and video loads
     this.state.items.forEach(item => {
-      const images = item.querySelectorAll('img');
-      images.forEach(img => {
-        if (!img.complete) {
-          img.addEventListener('load', this.handleItemLoad);
-          img.addEventListener('error', this.handleItemLoad);
+      const media = item.querySelectorAll('img, video');
+      media.forEach(element => {
+        if (element.tagName === 'IMG' && !element.complete) {
+          element.addEventListener('load', this.handleItemLoad);
+          element.addEventListener('error', this.handleItemLoad);
+        } else if (element.tagName === 'VIDEO') {
+          element.addEventListener('loadedmetadata', this.handleItemLoad);
         }
       });
     });
@@ -358,7 +382,7 @@ class MasonryLayout {
     
     this.layoutTimeout = setTimeout(() => {
       this.layout();
-    }, 500);
+    }, 100); // Reduced timeout for more responsive loading
   }
 
   /**
@@ -383,7 +407,7 @@ class MasonryLayout {
         breakpointChange: `${oldBreakpoint} → ${this.state.currentBreakpoint}`,
         widthChange: `${oldContainerWidth}px → ${this.state.containerWidth}px`,
         columnChange: `${oldColumns} → ${this.state.actualColumns}`,
-        columnWidth: `${this.state.columnWidth}px`,
+        actualColumnWidth: `${this.state.actualColumnWidth}px`,
         gaps: `${this.state.gapX}px x ${this.state.gapY}px`
       });
       
@@ -401,7 +425,7 @@ class MasonryLayout {
       
       // Always re-layout after resize
       this.layout();
-    }, 100); // Reduced debounce time for more responsive resizing
+    }, 150); // Slightly increased debounce for better performance
   }
 
   /**
@@ -447,7 +471,7 @@ class MasonryLayout {
   }
 
   /**
-   * Position individual item
+   * Position individual item using min-width approach
    */
   positionItem(item) {
     // Find shortest column
@@ -456,19 +480,25 @@ class MasonryLayout {
     );
     
     // Calculate position
-    const x = shortestColumnIndex * (this.state.columnWidth + this.state.gapX);
+    const x = shortestColumnIndex * (this.state.actualColumnWidth + this.state.gapX);
     const y = this.state.columns[shortestColumnIndex];
     
-    // Set item position
+    // Set item position and width
     item.style.left = `${x}px`;
     item.style.top = `${y}px`;
-    item.style.width = `${this.state.columnWidth}px`;
+    item.style.width = `${this.state.actualColumnWidth}px`;
+    
+    // Force layout calculation to get accurate height
+    item.style.height = 'auto';
+    
+    // Get the actual height after width is set
+    const itemHeight = item.offsetHeight;
     
     // Update column height
-    this.state.columns[shortestColumnIndex] += item.offsetHeight + this.state.gapY;
+    this.state.columns[shortestColumnIndex] += itemHeight + this.state.gapY;
     
     // Add positioned class for styling hooks
-    item.classList.add('masonry_item_positioned');
+    item.classList.add('masonry_item-positioned');
   }
 
   /**
@@ -481,12 +511,14 @@ class MasonryLayout {
     newItems.forEach(item => {
       item.style.position = 'absolute';
       
-      // Setup image load listeners
-      const images = item.querySelectorAll('img');
-      images.forEach(img => {
-        if (!img.complete) {
-          img.addEventListener('load', this.handleItemLoad);
-          img.addEventListener('error', this.handleItemLoad);
+      // Setup media load listeners
+      const media = item.querySelectorAll('img, video');
+      media.forEach(element => {
+        if (element.tagName === 'IMG' && !element.complete) {
+          element.addEventListener('load', this.handleItemLoad);
+          element.addEventListener('error', this.handleItemLoad);
+        } else if (element.tagName === 'VIDEO') {
+          element.addEventListener('loadedmetadata', this.handleItemLoad);
         }
       });
     });
@@ -597,10 +629,11 @@ class MasonryLayout {
     window.removeEventListener('resize', this.handleResize);
     
     this.state.items.forEach(item => {
-      const images = item.querySelectorAll('img');
-      images.forEach(img => {
-        img.removeEventListener('load', this.handleItemLoad);
-        img.removeEventListener('error', this.handleItemLoad);
+      const media = item.querySelectorAll('img, video');
+      media.forEach(element => {
+        element.removeEventListener('load', this.handleItemLoad);
+        element.removeEventListener('error', this.handleItemLoad);
+        element.removeEventListener('loadedmetadata', this.handleItemLoad);
       });
       
       // Reset item styles
@@ -608,7 +641,8 @@ class MasonryLayout {
       item.style.left = '';
       item.style.top = '';
       item.style.width = '';
-      item.classList.remove('masonry_item_positioned');
+      item.style.height = '';
+      item.classList.remove('masonry_item-positioned');
     });
     
     // Reset container styles
@@ -616,7 +650,7 @@ class MasonryLayout {
     this.container.style.position = '';
     
     // Remove breakpoint classes
-    const breakpoints = ['mobile_portrait', 'mobile_landscape', 'tablet', 'desktop'];
+    const breakpoints = ['mobile-portrait', 'mobile-landscape', 'tablet', 'desktop'];
     breakpoints.forEach(bp => {
       this.container.classList.remove(`masonry_${bp}`);
     });
@@ -653,7 +687,8 @@ class MasonryLayout {
     return {
       breakpoint: this.state.currentBreakpoint,
       columns: this.state.actualColumns,
-      columnWidth: this.state.columnWidth,
+      columnMinWidth: this.state.columnMinWidth,
+      actualColumnWidth: this.state.actualColumnWidth,
       gapX: this.state.gapX,
       gapY: this.state.gapY,
       containerWidth: this.state.containerWidth
