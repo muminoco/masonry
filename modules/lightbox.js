@@ -8,8 +8,8 @@
  */
 
 const DEFAULT_LIGHTBOX_CONFIG = {
-  lightboxSelector: '.lightbox',
-  contentContainerAttribute: 'content-container',
+  lightboxAttribute: 'lightbox',
+  contentTargetAttribute: 'content-target',
   closeAttribute: 'close',
   /**
    * Destroy lightbox plugin
@@ -72,17 +72,17 @@ class MasonryLightbox {
       return;
     }
     
-    // Find lightbox elements
-    this.lightboxElement = document.querySelector(this.config.lightboxSelector);
-    this.contentContainer = document.querySelector(`[${this.attributePrefix}-lightbox="${this.config.contentContainerAttribute}"]`);
+    // Find lightbox elements using data attributes
+    this.lightboxElement = document.querySelector(`[${this.attributePrefix}-lightbox="${this.config.lightboxAttribute}"]`);
+    this.contentContainer = document.querySelector(`[${this.attributePrefix}-lightbox="${this.config.contentTargetAttribute}"]`);
     
     if (!this.lightboxElement) {
-      console.error('🔆 Lightbox: Lightbox element not found with selector:', this.config.lightboxSelector);
+      console.error('🔆 Lightbox: Lightbox element not found with selector:', `[${this.attributePrefix}-lightbox="${this.config.lightboxAttribute}"]`);
       return;
     }
     
     if (!this.contentContainer) {
-      console.error('🔆 Lightbox: Content container not found with selector:', `[${this.attributePrefix}-lightbox="${this.config.contentContainerAttribute}"]`);
+      console.error('🔆 Lightbox: Content container not found with selector:', `[${this.attributePrefix}-lightbox="${this.config.contentTargetAttribute}"]`);
       return;
     }
     
@@ -176,6 +176,35 @@ class MasonryLightbox {
   }
 
   /**
+   * Reset scroll position of lightbox and all scrollable descendants
+   */
+  resetScrollPosition() {
+    console.log('🔆 Lightbox: Resetting scroll positions...');
+    
+    // Reset scroll position of the lightbox element itself
+    this.lightboxElement.scrollTop = 0;
+    this.lightboxElement.scrollLeft = 0;
+    
+    // Find all potentially scrollable descendants
+    const scrollableElements = this.lightboxElement.querySelectorAll('*');
+    
+    scrollableElements.forEach(element => {
+      const computedStyle = getComputedStyle(element);
+      const overflowX = computedStyle.overflowX;
+      const overflowY = computedStyle.overflowY;
+      
+      // Check if element has scrollable overflow
+      if (overflowX === 'auto' || overflowX === 'scroll' || 
+          overflowY === 'auto' || overflowY === 'scroll') {
+        element.scrollTop = 0;
+        element.scrollLeft = 0;
+      }
+    });
+    
+    console.log('✅ Lightbox: Scroll positions reset');
+  }
+
+  /**
    * Open lightbox with specified masonry item
    */
   async open(item) {
@@ -211,8 +240,12 @@ class MasonryLightbox {
     // Force reflow to ensure display change is processed
     this.lightboxElement.offsetHeight;
     
-    // Add body class to prevent scrolling (optional)
+    // Reset scroll positions after showing
+    this.resetScrollPosition();
+    
+    // Prevent body scrolling
     document.body.classList.add('lightbox-open');
+    document.body.style.overflow = 'hidden';
     
     // Dispatch after open event
     this.dispatchEvent('masonry:lightboxOpen', {
@@ -245,8 +278,9 @@ class MasonryLightbox {
     // Remove classes
     this.lightboxElement.classList.remove('is-open');
     
-    // Remove body class
+    // Restore body scrolling
     document.body.classList.remove('lightbox-open');
+    document.body.style.overflow = '';
     
     // Clear content and hide immediately
     this.clearContent();
