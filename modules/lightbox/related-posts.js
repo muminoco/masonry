@@ -11,25 +11,11 @@
  * 2. Add data-masonry-related="target" to specify clone destination
  */
 
+import { RELATED_POSTS_CONFIG } from './config.js';
+
 const DEFAULT_RELATED_CONFIG = {
-    enabledAttribute: 'true',
-    targetAttribute: 'target',
-    sourceAttribute: 'source',
-    filterAttribute: 'filter',
-    filterPrefixAttribute: 'filter-',
-    maxItemsAttribute: 'max',
-    excludeCurrentAttribute: 'exclude-current',
-    noResultsAttribute: 'no-results',
-    
-    // Default values
-    maxItems: null, // No limit by default
-    excludeCurrent: true,
-    noResultsSelector: null,
-    
-    // CSS classes
-    relatedItemClass: 'is-related-post',
-    noResultsVisibleClass: 'is-visible'
-  };
+  ...RELATED_POSTS_CONFIG
+};
   
   class MasonryRelatedPosts {
     constructor(masonryInstance, options = {}) {
@@ -328,6 +314,9 @@ const DEFAULT_RELATED_CONFIG = {
       // Clear existing content first
       this.clearRelatedPosts();
       
+      // Add related container class to target container
+      this.targetContainer.classList.add(this.config.relatedContainerClass);
+      
       items.forEach(item => {
         // Clone the entire item
         const clonedItem = item.cloneNode(true);
@@ -453,6 +442,9 @@ const DEFAULT_RELATED_CONFIG = {
       while (this.targetContainer.firstChild) {
         this.targetContainer.removeChild(this.targetContainer.firstChild);
       }
+      
+      // Remove related container class from target container
+      this.targetContainer.classList.remove(this.config.relatedContainerClass);
       
       // Hide no results element
       if (this.noResultsElement) {

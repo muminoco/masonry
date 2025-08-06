@@ -7,10 +7,10 @@
  * masonry.use(lightboxPlugin);
  */
 
+import { LIGHTBOX_CONFIG } from './config.js';
+
 const DEFAULT_LIGHTBOX_CONFIG = {
-  lightboxAttribute: 'lightbox',
-  contentTargetAttribute: 'content-target',
-  closeAttribute: 'close',
+  ...LIGHTBOX_CONFIG,
   /**
    * Destroy lightbox plugin
    */
@@ -228,7 +228,7 @@ class MasonryLightbox {
     this.cloneItemContent(item);
     
     // Add classes
-    this.lightboxElement.classList.add('is-open');
+    this.lightboxElement.classList.add(this.config.openClass);
     
     console.log('🔆 Lightbox: Added classes', {
       lightboxClasses: this.lightboxElement.className
@@ -244,7 +244,7 @@ class MasonryLightbox {
     this.resetScrollPosition();
     
     // Prevent body scrolling
-    document.body.classList.add('lightbox-open');
+    document.body.classList.add(this.config.bodyOpenClass);
     document.body.style.overflow = 'hidden';
     
     // Dispatch after open event
@@ -276,10 +276,10 @@ class MasonryLightbox {
     this.isOpen = false;
     
     // Remove classes
-    this.lightboxElement.classList.remove('is-open');
+    this.lightboxElement.classList.remove(this.config.openClass);
     
     // Restore body scrolling
-    document.body.classList.remove('lightbox-open');
+    document.body.classList.remove(this.config.bodyOpenClass);
     document.body.style.overflow = '';
     
     // Clear content and hide immediately
@@ -316,7 +316,7 @@ class MasonryLightbox {
     this.resetMasonryStyles(clonedItem);
     
     // Add is-in-lightbox class to cloned item
-    clonedItem.classList.add('is-in-lightbox');
+    clonedItem.classList.add(this.config.inLightboxClass);
     
     // Append to content container
     this.contentContainer.appendChild(clonedItem);
