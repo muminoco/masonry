@@ -4,7 +4,8 @@ export const DEFAULT_CONFIG = {
     transitionDuration: 300,
     // Auto-initialization selector configuration
     autoInitAttribute: 'data-masonry',
-    autoInitValue: 'grid'
+    autoRefreshAttribute: 'auto-refresh',
+    autoInitValue: 'grid',
   };
   
   // Default CSS property values (used as fallback)
@@ -66,7 +67,7 @@ export const DEFAULT_CONFIG = {
     actualColumns: 0,
     gapX: 0,
     gapY: 0,
-    currentBreakpoint: null
+    currentBreakpoint: null,
   };
   
   // Available hook names

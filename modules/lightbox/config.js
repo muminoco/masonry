@@ -41,6 +41,13 @@ export const RELATED_POSTS_CONFIG = {
   noResultsVisibleClass: 'is-visible'
 };
 
+// Slug Configuration (only data-attribute names)
+export const SLUG_CONFIG = {
+  enabledAttribute: 'masonry-enable-slug', // data-masonry-slug
+  prefixAttribute: 'masonry-slug-prefix', // data-masonry-slug-prefix
+  valueAttribute: 'masonry-slug', // data-masonry-slug-value
+};
+
 // Default configuration objects for backward compatibility
 export const DEFAULT_LIGHTBOX_CONFIG = LIGHTBOX_CONFIG;
 export const DEFAULT_RELATED_CONFIG = RELATED_POSTS_CONFIG; 

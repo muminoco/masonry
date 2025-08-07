@@ -48,6 +48,10 @@ class MasonryLayout {
     // Event handlers (bound for proper context)
     this.handleResize = createDebouncedHandler(this._handleResize.bind(this), 150);
     this.handleItemLoad = createDebouncedHandler(this._handleItemLoad.bind(this), 100);
+    this.handleMutationRefresh = createDebouncedHandler(this._handleMutationRefresh.bind(this), 100);
+
+    // Mutation observer
+    this.mutationObserver = null;
 
     this.init();
   }
@@ -63,6 +67,7 @@ class MasonryLayout {
       this.getItems();
       this.calculateDimensions();
       this.setupEventListeners();
+      this.setupMutationObserver();
       
       await this.layout();
       
@@ -163,6 +168,55 @@ class MasonryLayout {
 
     // Listen for window resize
     window.addEventListener('resize', this.handleResize);
+  }
+
+  /**
+   * Setup mutation observer for automatic refresh on DOM changes
+   */
+  setupMutationObserver() {
+    // Only setup if opted in via data attribute
+    const isEnabled = this.container.getAttribute(`${this.config.autoInitAttribute}-${this.config.autoRefreshAttribute}`) === 'true';
+    
+    if (!isEnabled) {
+      console.log('🧱 Masonry: Auto-refresh not enabled (add data-masonry-auto-refresh="true" to enable)');
+      return;
+    }
+
+    console.log('🧱 Masonry: Setting up mutation observer for auto-refresh...');
+
+    this.mutationObserver = new MutationObserver(mutations => {
+      // Check if layout is already in progress
+      if (this.state.isLayoutInProgress) {
+        return;
+      }
+
+      // Only trigger on actual additions/removals of direct children
+      const hasChildListChanges = mutations.some(mutation => 
+        mutation.type === 'childList' && 
+        (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)
+      );
+      
+      if (hasChildListChanges) {
+        console.log('🧱 Masonry: DOM changes detected, triggering auto-refresh...');
+        this.handleMutationRefresh();
+      }
+    });
+
+    // Start observing direct children only
+    this.mutationObserver.observe(this.container, {
+      childList: true,
+      subtree: false // Only direct children changes
+    });
+
+    console.log('✅ Masonry: Mutation observer active for auto-refresh');
+  }
+
+  /**
+   * Handle mutation-triggered refresh (internal method)
+   */
+  _handleMutationRefresh() {
+    console.log('🧱 Masonry: Executing mutation-triggered refresh...');
+    this.refresh();
   }
 
   /**
@@ -360,6 +414,13 @@ class MasonryLayout {
     
     // Remove event listeners
     window.removeEventListener('resize', this.handleResize);
+    
+    // Cleanup mutation observer
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect();
+      this.mutationObserver = null;
+      console.log('🧱 Masonry: Mutation observer disconnected');
+    }
     
     this.state.items.forEach(item => {
       removeMediaListeners(item, this.handleItemLoad);
