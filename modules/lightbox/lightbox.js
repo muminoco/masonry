@@ -8,6 +8,8 @@
  */
 
 import { LIGHTBOX_CONFIG } from './config.js';
+import { SLUG_CONFIG } from './config.js';
+import { createSlugManager } from './slugs.js';
 
 const DEFAULT_LIGHTBOX_CONFIG = {
   ...LIGHTBOX_CONFIG,
@@ -55,6 +57,9 @@ class MasonryLightbox {
     this.handleCloseClick = this.handleCloseClick.bind(this);
     this.handleEscapeKey = this.handleEscapeKey.bind(this);
     
+    // Slug manager for this container
+    this.slugManager = createSlugManager(this.masonry.container);
+
     this.init();
   }
 
@@ -247,6 +252,11 @@ class MasonryLightbox {
     document.body.classList.add(this.config.bodyOpenClass);
     document.body.style.overflow = 'hidden';
     
+    // Set slug if enabled
+    if (this.slugManager && this.slugManager.isSlugEnabled()) {
+      this.slugManager.setSlug(item);
+    }
+    
     // Dispatch after open event
     this.dispatchEvent('masonry:lightboxOpen', {
       item: this.currentItem,
@@ -285,6 +295,11 @@ class MasonryLightbox {
     // Clear content and hide immediately
     this.clearContent();
     this.lightboxElement.style.display = 'none';
+    
+    // Clear slug if enabled
+    if (this.slugManager && this.slugManager.isSlugEnabled()) {
+      this.slugManager.clearSlug();
+    }
     
     // Dispatch after close event
     this.dispatchEvent('masonry:lightboxClose', {
