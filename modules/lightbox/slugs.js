@@ -13,6 +13,8 @@ export class SlugManager {
       this.slugPrefix = this.container.getAttribute(`data-${SLUG_CONFIG.prefixAttribute}`) || '';
       this.originalUrl = window.location.href;
       this.currentSlug = null;
+    this.lightboxInstance = null;
+    this.isHandlingPopState = false;
       
       console.log('🔗 Slugs: Initializing slug manager...', {
         enabled: this.isEnabled,
@@ -95,13 +97,18 @@ export class SlugManager {
       const slugUrl = this.buildSlugUrl(slugValue);
       
       try {
-        // Update browser URL without page reload
-        window.history.pushState({ 
-          masonrySlug: slugValue,
-          originalUrl: this.originalUrl 
-        }, '', slugUrl);
-        
-        this.currentSlug = slugValue;
+        // If this navigation is caused by a popstate (user back/forward),
+        // do NOT push another history entry. Just sync internal state.
+        if (this.isHandlingPopState) {
+          this.currentSlug = slugValue;
+        } else {
+          // Update browser URL without page reload
+          window.history.pushState({ 
+            masonrySlug: slugValue,
+            originalUrl: this.originalUrl 
+          }, '', slugUrl);
+          this.currentSlug = slugValue;
+        }
         
         console.log('🔗 Slugs: URL updated to:', slugUrl);
         
@@ -130,16 +137,20 @@ export class SlugManager {
       if (!this.isEnabled || !this.currentSlug) return false;
       
       try {
-        // Restore original URL
-        window.history.pushState({ 
-          masonrySlug: null,
-          originalUrl: this.originalUrl 
-        }, '', this.originalUrl);
-        
         const clearedSlug = this.currentSlug;
-        this.currentSlug = null;
         
-        console.log('🔗 Slugs: URL cleared back to:', this.originalUrl);
+        // If we're responding to a popstate, do not manipulate history again.
+        if (this.isHandlingPopState) {
+          this.currentSlug = null;
+        } else {
+          // Navigate back to the previous state so that Forward can re-open
+          // the item. The popstate handler will take care of actually closing
+          // the lightbox and syncing state.
+          window.history.back();
+          // Leave currentSlug as-is; it will be nulled by popstate path.
+        }
+        
+        console.log('🔗 Slugs: Requested URL clear (back to original)');
         
         // Dispatch custom event
         this.container.dispatchEvent(new CustomEvent('masonry:slugCleared', {
@@ -194,6 +205,74 @@ export class SlugManager {
         from: oldUrl,
         to: this.originalUrl
       });
+    }
+
+    /**
+     * Find a masonry item by slug value
+     */
+    findItemBySlug(slugValue) {
+      if (!slugValue) return null;
+      return this.container.querySelector(`[data-${SLUG_CONFIG.valueAttribute}="${CSS.escape(slugValue)}"]`);
+    }
+
+    /**
+     * Attach lightbox instance and set up popstate handling
+     */
+    attachLightbox(lightboxInstance) {
+      if (!this.isEnabled) return;
+      this.lightboxInstance = lightboxInstance;
+      
+      // Bind once
+      if (!this._boundPopStateHandler) {
+        this._boundPopStateHandler = this.handlePopState.bind(this);
+        window.addEventListener('popstate', this._boundPopStateHandler);
+        console.log('🔗 Slugs: Popstate handler attached');
+      }
+    }
+
+    /**
+     * Detach lightbox and cleanup listeners
+     */
+    detachLightbox() {
+      if (this._boundPopStateHandler) {
+        window.removeEventListener('popstate', this._boundPopStateHandler);
+        this._boundPopStateHandler = null;
+        console.log('🔗 Slugs: Popstate handler detached');
+      }
+      this.lightboxInstance = null;
+    }
+
+    /**
+     * Handle browser back/forward navigation
+     */
+    handlePopState(event) {
+      if (!this.isEnabled) return;
+      const state = event.state || {};
+      const targetSlug = state.masonrySlug || null;
+      
+      // Prevent recursive history updates while we respond to navigation
+      this.isHandlingPopState = true;
+      
+      try {
+        if (targetSlug) {
+          const targetItem = this.findItemBySlug(targetSlug);
+          if (targetItem && this.lightboxInstance) {
+            // Open corresponding item without pushing new history
+            this.lightboxInstance.openItem(targetItem);
+          } else {
+            console.warn('🔗 Slugs: No item found for slug on popstate:', targetSlug);
+          }
+        } else {
+          // No slug in state → ensure lightbox is closed
+          if (this.lightboxInstance && this.lightboxInstance.isLightboxOpen()) {
+            this.lightboxInstance.close();
+          }
+          this.currentSlug = null;
+        }
+      } finally {
+        // Allow normal slug pushes again after handlers complete in microtask
+        setTimeout(() => { this.isHandlingPopState = false; }, 0);
+      }
     }
   
     /**
