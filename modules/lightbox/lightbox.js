@@ -13,6 +13,8 @@ import { createSlugManager } from './slugs.js';
 
 const DEFAULT_LIGHTBOX_CONFIG = {
   ...LIGHTBOX_CONFIG,
+  // Attribute value to mark elements that should not trigger the lightbox when clicked
+  ignoreAttribute: 'ignore',
   /**
    * Destroy lightbox plugin
    */
@@ -143,6 +145,11 @@ class MasonryLightbox {
    * Handle clicks on masonry items
    */
   handleItemClick(event) {
+    // Ignore clicks on elements explicitly marked to skip opening the lightbox
+    if (event.target.closest(`[${this.attributePrefix}-lightbox="${this.config.ignoreAttribute}"]`)) {
+      return;
+    }
+
     // Find the clicked masonry item (direct child of container)
     let clickedItem = event.target;
     
