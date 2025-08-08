@@ -98,6 +98,11 @@ class MasonryLightbox {
     
     this.setupEventListeners();
     this.setupHooks();
+    // Connect slug manager with this lightbox so back/forward navigation can
+    // open/close appropriate items.
+    if (this.slugManager && this.slugManager.isSlugEnabled()) {
+      this.slugManager.attachLightbox(this);
+    }
     
     console.log('✅ Lightbox: Plugin initialized successfully');
   }
@@ -124,6 +129,12 @@ class MasonryLightbox {
     this.masonry.addHook('beforeDestroy', () => {
       if (this.isOpen) {
         this.close();
+      }
+    });
+    // Cleanup slug manager listener on destroy
+    this.masonry.addHook('afterDestroy', () => {
+      if (this.slugManager && this.slugManager.isSlugEnabled()) {
+        this.slugManager.detachLightbox();
       }
     });
   }
@@ -239,9 +250,6 @@ class MasonryLightbox {
       lightboxClasses: this.lightboxElement.className
     });
     
-    // Show lightbox (change from display: none to display: flex)
-    this.lightboxElement.style.display = 'flex';
-    
     // Force reflow to ensure display change is processed
     this.lightboxElement.offsetHeight;
     
@@ -294,7 +302,6 @@ class MasonryLightbox {
     
     // Clear content and hide immediately
     this.clearContent();
-    this.lightboxElement.style.display = 'none';
     
     // Clear slug if enabled
     if (this.slugManager && this.slugManager.isSlugEnabled()) {
