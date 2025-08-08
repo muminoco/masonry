@@ -250,9 +250,6 @@ class MasonryLightbox {
       lightboxClasses: this.lightboxElement.className
     });
     
-    // Show lightbox (change from display: none to display: flex)
-    this.lightboxElement.style.display = 'flex';
-    
     // Force reflow to ensure display change is processed
     this.lightboxElement.offsetHeight;
     
@@ -305,7 +302,6 @@ class MasonryLightbox {
     
     // Clear content and hide immediately
     this.clearContent();
-    this.lightboxElement.style.display = 'none';
     
     // Clear slug if enabled
     if (this.slugManager && this.slugManager.isSlugEnabled()) {
