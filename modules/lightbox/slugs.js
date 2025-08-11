@@ -6,6 +6,32 @@
  */
 import { SLUG_CONFIG } from './config.js';
 
+// Breadcrumb + sentinel support for refresh → back
+const BREADCRUMB_STORAGE_KEY = 'masonryOriginalUrl';
+const RETURN_SENTINEL_FLAG = 'masonryReturnSentinel';
+
+function isReloadNavigation() {
+  try {
+    if (typeof performance !== 'undefined') {
+      const entries = performance.getEntriesByType && performance.getEntriesByType('navigation');
+      if (entries && entries[0]) return entries[0].type === 'reload';
+      if (performance.navigation && typeof performance.navigation.type === 'number') {
+        return performance.navigation.type === 1; // TYPE_RELOAD
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
+function safeSameOrigin(url) {
+  try {
+    const u = new URL(url, window.location.origin);
+    return u.origin === window.location.origin;
+  } catch (_) {
+    return false;
+  }
+}
+
 export class SlugManager {
     constructor(container) {
       this.container = container;
@@ -97,6 +123,11 @@ export class SlugManager {
       const slugUrl = this.buildSlugUrl(slugValue);
       
       try {
+        // Store breadcrumb once for refresh→back support (only for user-initiated opens)
+        if (!this.isHandlingPopState && !sessionStorage.getItem(BREADCRUMB_STORAGE_KEY)) {
+          sessionStorage.setItem(BREADCRUMB_STORAGE_KEY, this.originalUrl);
+          console.log('🔗 Slugs: Stored breadcrumb URL for refresh/back:', this.originalUrl);
+        }
         // If this navigation is caused by a popstate (user back/forward),
         // do NOT push another history entry. Just sync internal state.
         if (this.isHandlingPopState) {
@@ -268,10 +299,49 @@ export class SlugManager {
             this.lightboxInstance.close();
           }
           this.currentSlug = null;
+          // Returned to grid via history → clear breadcrumb if present
+          if (sessionStorage.getItem(BREADCRUMB_STORAGE_KEY)) {
+            sessionStorage.removeItem(BREADCRUMB_STORAGE_KEY);
+            console.log('🔗 Slugs: Cleared breadcrumb after returning to grid');
+          }
         }
       } finally {
         // Allow normal slug pushes again after handlers complete in microtask
         setTimeout(() => { this.isHandlingPopState = false; }, 0);
+      }
+    }
+
+    /**
+     * Seed refresh→back behavior when user refreshed on an item page.
+     * Works without a masonry instance present on the page.
+     */
+    static seedRefreshBackSupport() {
+      try {
+        const storedUrl = sessionStorage.getItem(BREADCRUMB_STORAGE_KEY);
+        if (!storedUrl || !safeSameOrigin(storedUrl)) return;
+        if (!isReloadNavigation()) return;
+
+        console.log('🔗 Slugs: Seeding refresh→back support. Breadcrumb:', storedUrl);
+
+        // Push a sentinel entry so the next Back is interceptable
+        window.history.pushState({ [RETURN_SENTINEL_FLAG]: true }, '', window.location.href);
+
+        const onFirstBack = () => {
+          try {
+            const url = sessionStorage.getItem(BREADCRUMB_STORAGE_KEY);
+            if (url && safeSameOrigin(url)) {
+              console.log('🔗 Slugs: Intercepted first Back after refresh → redirecting to:', url);
+              sessionStorage.removeItem(BREADCRUMB_STORAGE_KEY);
+              window.location.assign(url);
+            }
+          } finally {
+            window.removeEventListener('popstate', onFirstBack);
+          }
+        };
+
+        window.addEventListener('popstate', onFirstBack);
+      } catch (e) {
+        console.warn('🔗 Slugs: Failed to seed refresh→back support:', e);
       }
     }
   
