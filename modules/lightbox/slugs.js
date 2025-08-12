@@ -6,32 +6,6 @@
  */
 import { SLUG_CONFIG } from './config.js';
 
-// Breadcrumb + sentinel support for refresh → back
-const BREADCRUMB_STORAGE_KEY = 'masonryOriginalUrl';
-const RETURN_SENTINEL_FLAG = 'masonryReturnSentinel';
-
-function isReloadNavigation() {
-  try {
-    if (typeof performance !== 'undefined') {
-      const entries = performance.getEntriesByType && performance.getEntriesByType('navigation');
-      if (entries && entries[0]) return entries[0].type === 'reload';
-      if (performance.navigation && typeof performance.navigation.type === 'number') {
-        return performance.navigation.type === 1; // TYPE_RELOAD
-      }
-    }
-  } catch (_) {}
-  return false;
-}
-
-function safeSameOrigin(url) {
-  try {
-    const u = new URL(url, window.location.origin);
-    return u.origin === window.location.origin;
-  } catch (_) {
-    return false;
-  }
-}
-
 export class SlugManager {
     constructor(container) {
       this.container = container;
@@ -72,43 +46,41 @@ export class SlugManager {
     }
   
     /**
-     * Build the complete URL with slug
+     * Build the masonrySlug query-param value: "<prefix>/<slug>" or just "<slug>"
+     */
+    buildSlugParamValue(slugValue) {
+      if (!slugValue) return '';
+      return this.slugPrefix ? `${this.slugPrefix}/${slugValue}` : `${slugValue}`;
+    }
+
+    /**
+     * Build a new URL for the current page, preserving path and other params,
+     * and setting the masonrySlug query param to the provided slug value
      */
     buildSlugUrl(slugValue) {
-      if (!slugValue) return this.originalUrl;
-      
-      // Get domain root URL (protocol + domain)
-      const baseUrl = window.location.origin;
-      
-      // Ensure base URL ends with /
-      const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
-      
-      // Construct the slug URL
-      let slugUrl = normalizedBaseUrl;
-      
-      // Add prefix if specified
-      if (this.slugPrefix) {
-        const normalizedPrefix = this.slugPrefix.startsWith('/') 
-          ? this.slugPrefix.substring(1) 
-          : this.slugPrefix;
-        const prefixWithSlash = normalizedPrefix.endsWith('/') 
-          ? normalizedPrefix 
-          : normalizedPrefix + '/';
-        
-        slugUrl += prefixWithSlash;
+      try {
+        const url = new URL(window.location.href);
+        const paramValue = this.buildSlugParamValue(slugValue);
+        if (paramValue) {
+          url.searchParams.set(SLUG_CONFIG.slugQueryParam, paramValue);
+        } else {
+          url.searchParams.delete(SLUG_CONFIG.slugQueryParam);
+        }
+
+        const finalUrl = url.toString();
+        console.log('🔗 Slugs: Built slug URL (query param mode):', {
+          path: url.pathname,
+          existingParams: url.search,
+          prefix: this.slugPrefix,
+          slug: slugValue,
+          [SLUG_CONFIG.slugQueryParam]: paramValue,
+          finalUrl
+        });
+        return finalUrl;
+      } catch (error) {
+        console.error('🔗 Slugs: Failed building slug URL:', error);
+        return this.originalUrl;
       }
-      
-      // Add the slug value
-      slugUrl += slugValue;
-      
-      console.log('🔗 Slugs: Built slug URL:', {
-        baseUrl,
-        prefix: this.slugPrefix,
-        slug: slugValue,
-        finalUrl: slugUrl
-      });
-      
-      return slugUrl;
     }
   
     /**
@@ -123,11 +95,6 @@ export class SlugManager {
       const slugUrl = this.buildSlugUrl(slugValue);
       
       try {
-        // Store breadcrumb once for refresh→back support (only for user-initiated opens)
-        if (!this.isHandlingPopState && !sessionStorage.getItem(BREADCRUMB_STORAGE_KEY)) {
-          sessionStorage.setItem(BREADCRUMB_STORAGE_KEY, this.originalUrl);
-          console.log('🔗 Slugs: Stored breadcrumb URL for refresh/back:', this.originalUrl);
-        }
         // If this navigation is caused by a popstate (user back/forward),
         // do NOT push another history entry. Just sync internal state.
         if (this.isHandlingPopState) {
@@ -135,7 +102,8 @@ export class SlugManager {
         } else {
           // Update browser URL without page reload
           window.history.pushState({ 
-            masonrySlug: slugValue,
+            slug: slugValue, // slug only (no prefix)
+            slugParam: this.buildSlugParamValue(slugValue),
             originalUrl: this.originalUrl 
           }, '', slugUrl);
           this.currentSlug = slugValue;
@@ -279,7 +247,20 @@ export class SlugManager {
     handlePopState(event) {
       if (!this.isEnabled) return;
       const state = event.state || {};
-      const targetSlug = state.masonrySlug || null;
+      let targetSlug = state.slug || null;
+      
+      // Fallback to current URL's query param if state missing
+      if (!targetSlug) {
+        try {
+          const url = new URL(window.location.href);
+          const combinedParam = url.searchParams.get(SLUG_CONFIG.slugQueryParam);
+          if (combinedParam) {
+            targetSlug = this.parseSlugParam(combinedParam);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
       
       // Prevent recursive history updates while we respond to navigation
       this.isHandlingPopState = true;
@@ -299,11 +280,6 @@ export class SlugManager {
             this.lightboxInstance.close();
           }
           this.currentSlug = null;
-          // Returned to grid via history → clear breadcrumb if present
-          if (sessionStorage.getItem(BREADCRUMB_STORAGE_KEY)) {
-            sessionStorage.removeItem(BREADCRUMB_STORAGE_KEY);
-            console.log('🔗 Slugs: Cleared breadcrumb after returning to grid');
-          }
         }
       } finally {
         // Allow normal slug pushes again after handlers complete in microtask
@@ -312,37 +288,15 @@ export class SlugManager {
     }
 
     /**
-     * Seed refresh→back behavior when user refreshed on an item page.
-     * Works without a masonry instance present on the page.
+     * Parse combined masonrySlug param ("<prefix>/<slug>" or "<slug>") to the slug part
      */
-    static seedRefreshBackSupport() {
-      try {
-        const storedUrl = sessionStorage.getItem(BREADCRUMB_STORAGE_KEY);
-        if (!storedUrl || !safeSameOrigin(storedUrl)) return;
-        if (!isReloadNavigation()) return;
-
-        console.log('🔗 Slugs: Seeding refresh→back support. Breadcrumb:', storedUrl);
-
-        // Push a sentinel entry so the next Back is interceptable
-        window.history.pushState({ [RETURN_SENTINEL_FLAG]: true }, '', window.location.href);
-
-        const onFirstBack = () => {
-          try {
-            const url = sessionStorage.getItem(BREADCRUMB_STORAGE_KEY);
-            if (url && safeSameOrigin(url)) {
-              console.log('🔗 Slugs: Intercepted first Back after refresh → redirecting to:', url);
-              sessionStorage.removeItem(BREADCRUMB_STORAGE_KEY);
-              window.location.assign(url);
-            }
-          } finally {
-            window.removeEventListener('popstate', onFirstBack);
-          }
-        };
-
-        window.addEventListener('popstate', onFirstBack);
-      } catch (e) {
-        console.warn('🔗 Slugs: Failed to seed refresh→back support:', e);
-      }
+    parseSlugParam(paramValue) {
+      if (!paramValue) return null;
+      // URLSearchParams.get() returns decoded value
+      const trimmed = String(paramValue).trim();
+      if (!trimmed) return null;
+      const parts = trimmed.split('/');
+      return parts[parts.length - 1] || null;
     }
   
     /**
