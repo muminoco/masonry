@@ -9,7 +9,7 @@
  *
  * Usage in Webflow:
  * - Project Settings → Custom Code → Inside <head> tag, or per-page Settings → Inside <head> tag.
- * - Paste the contents of this file inside a <script>...</script> tag.
+ * - Paste the contents of this file inside script tags.
  * - To avoid page flash, prefer placing it in the <head>.
  *
  * IMPORTANT: Keep PARAM_NAME in sync with modules/lightbox/config.js → SLUG_CONFIG.slugQueryParam.
@@ -19,6 +19,11 @@
     var PARAM_NAME = 'itemSlug';
 
     // If you changed SLUG_CONFIG.slugQueryParam in your project, update PARAM_NAME to match.
+
+    // Ultra-fast guard: skip everything if the query param isn't present
+    if (!window.location || !window.location.search || window.location.search.indexOf(PARAM_NAME + '=') === -1) {
+      return;
+    }
 
     var currentUrl = new URL(window.location.href);
     var combined = currentUrl.searchParams.get(PARAM_NAME);

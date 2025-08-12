@@ -47,7 +47,7 @@ export const SLUG_CONFIG = {
   prefixAttribute: 'masonry-slug-prefix', // data-masonry-slug-prefix
   valueAttribute: 'masonry-slug', // data-masonry-slug-value
   // Query parameter name to use in URLs when lightbox is open
-  slugQueryParam: 'postsURL',
+  slugQueryParam: 'itemSlug',
 };
 
 // Default configuration objects for backward compatibility
