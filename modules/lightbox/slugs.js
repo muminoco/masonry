@@ -46,41 +46,42 @@ export class SlugManager {
     }
   
     /**
-     * Build the masonrySlug query-param value: "<prefix>/<slug>" or just "<slug>"
+     * Build the URL for the current page, preserving path and other params,
+     * and setting the combined slug value under the configured query param.
      */
-    buildSlugParamValue(slugValue) {
-      if (!slugValue) return '';
-      return this.slugPrefix ? `${this.slugPrefix}/${slugValue}` : `${slugValue}`;
+    buildUrlWithParam(combinedValue) {
+      try {
+        const currentUrl = new URL(window.location.href);
+        const paramName = SLUG_CONFIG.slugQueryParam;
+        if (!combinedValue) {
+          currentUrl.searchParams.delete(paramName);
+        } else {
+          currentUrl.searchParams.set(paramName, combinedValue);
+        }
+        const finalUrl = currentUrl.href;
+        console.log('🔗 Slugs: Built URL with query param:', {
+          param: paramName,
+          value: combinedValue,
+          finalUrl,
+        });
+        return finalUrl;
+      } catch (e) {
+        console.error('🔗 Slugs: Failed to build URL with param:', e);
+        return this.originalUrl;
+      }
     }
 
     /**
-     * Build a new URL for the current page, preserving path and other params,
-     * and setting the masonrySlug query param to the provided slug value
+     * Compose combined value as <prefix>/<slug> or just <slug>.
      */
-    buildSlugUrl(slugValue) {
-      try {
-        const url = new URL(window.location.href);
-        const paramValue = this.buildSlugParamValue(slugValue);
-        if (paramValue) {
-          url.searchParams.set(SLUG_CONFIG.slugQueryParam, paramValue);
-        } else {
-          url.searchParams.delete(SLUG_CONFIG.slugQueryParam);
-        }
-
-        const finalUrl = url.toString();
-        console.log('🔗 Slugs: Built slug URL (query param mode):', {
-          path: url.pathname,
-          existingParams: url.search,
-          prefix: this.slugPrefix,
-          slug: slugValue,
-          [SLUG_CONFIG.slugQueryParam]: paramValue,
-          finalUrl
-        });
-        return finalUrl;
-      } catch (error) {
-        console.error('🔗 Slugs: Failed building slug URL:', error);
-        return this.originalUrl;
+    composeCombinedValue(slugValue) {
+      if (!slugValue) return '';
+      const rawPrefix = this.slugPrefix || '';
+      const normalizedPrefix = rawPrefix.replace(/^\/+|\/+$/g, '');
+      if (normalizedPrefix) {
+        return `${normalizedPrefix}/${slugValue}`;
       }
+      return slugValue;
     }
   
     /**
@@ -92,7 +93,9 @@ export class SlugManager {
       const slugValue = this.getSlugFromItem(item);
       if (!slugValue) return false;
       
-      const slugUrl = this.buildSlugUrl(slugValue);
+      // Build combined value and URL with query param preserved
+      const combinedValue = this.composeCombinedValue(slugValue);
+      const nextUrl = this.buildUrlWithParam(combinedValue);
       
       try {
         // If this navigation is caused by a popstate (user back/forward),
@@ -102,21 +105,21 @@ export class SlugManager {
         } else {
           // Update browser URL without page reload
           window.history.pushState({ 
-            slug: slugValue, // slug only (no prefix)
-            slugParam: this.buildSlugParamValue(slugValue),
+            masonrySlug: slugValue,
+            masonryCombined: combinedValue,
             originalUrl: this.originalUrl 
-          }, '', slugUrl);
+          }, '', nextUrl);
           this.currentSlug = slugValue;
         }
         
-        console.log('🔗 Slugs: URL updated to:', slugUrl);
+        console.log('🔗 Slugs: URL updated to:', nextUrl);
         
         // Dispatch custom event for other systems to listen to
         this.container.dispatchEvent(new CustomEvent('masonry:slugSet', {
           detail: {
             item,
             slug: slugValue,
-            url: slugUrl,
+            url: nextUrl,
             originalUrl: this.originalUrl
           }
         }));
@@ -247,18 +250,23 @@ export class SlugManager {
     handlePopState(event) {
       if (!this.isEnabled) return;
       const state = event.state || {};
-      let targetSlug = state.slug || null;
+      let targetSlug = state.masonrySlug || null;
       
-      // Fallback to current URL's query param if state missing
+      // Fallback: if state is missing, resolve from current URL's query param
       if (!targetSlug) {
         try {
-          const url = new URL(window.location.href);
-          const combinedParam = url.searchParams.get(SLUG_CONFIG.slugQueryParam);
-          if (combinedParam) {
-            targetSlug = this.parseSlugParam(combinedParam);
+          const currentUrl = new URL(window.location.href);
+          const paramName = SLUG_CONFIG.slugQueryParam;
+          const combined = currentUrl.searchParams.get(paramName);
+          if (combined) {
+            const combinedStr = String(combined).trim();
+            if (combinedStr) {
+              const parts = combinedStr.split('/');
+              targetSlug = parts.length > 1 ? parts[parts.length - 1] : combinedStr;
+            }
           }
         } catch (e) {
-          // ignore
+          console.warn('🔗 Slugs: Failed to parse URL param on popstate:', e);
         }
       }
       
@@ -285,18 +293,6 @@ export class SlugManager {
         // Allow normal slug pushes again after handlers complete in microtask
         setTimeout(() => { this.isHandlingPopState = false; }, 0);
       }
-    }
-
-    /**
-     * Parse combined masonrySlug param ("<prefix>/<slug>" or "<slug>") to the slug part
-     */
-    parseSlugParam(paramValue) {
-      if (!paramValue) return null;
-      // URLSearchParams.get() returns decoded value
-      const trimmed = String(paramValue).trim();
-      if (!trimmed) return null;
-      const parts = trimmed.split('/');
-      return parts[parts.length - 1] || null;
     }
   
     /**
