@@ -231,9 +231,44 @@ class MasonryLightbox {
    * Open lightbox with specified masonry item
    */
   async open(item) {
+    // If already open, switch content without closing to avoid history back/popstate conflicts
     if (this.isOpen) {
-      console.log('🔆 Lightbox: Already open, closing current and opening new');
-      await this.close();
+      if (this.currentItem === item) {
+        return;
+      }
+      console.log('🔆 Lightbox: Switching to new item while open', item);
+      
+      // Dispatch before-open for consumers that repopulate based on the new item
+      this.dispatchEvent('masonry:lightboxBeforeOpen', {
+        item,
+        lightbox: this.lightboxElement
+      });
+      
+      // Update current item, replace content
+      this.currentItem = item;
+      this.clearContent();
+      this.cloneItemContent(item);
+      
+      // Ensure classes remain
+      this.lightboxElement.classList.add(this.config.openClass);
+      
+      // Reset scroll positions
+      this.resetScrollPosition();
+      
+      // Update slug if enabled (push new state for the new item)
+      if (this.slugManager && this.slugManager.isSlugEnabled()) {
+        this.slugManager.setSlug(item);
+      }
+      
+      // Dispatch open event again for consumers
+      this.dispatchEvent('masonry:lightboxOpen', {
+        item: this.currentItem,
+        lightbox: this.lightboxElement,
+        contentContainer: this.contentContainer
+      });
+      
+      console.log('✅ Lightbox: Switched item successfully');
+      return;
     }
     
     console.log('🔆 Lightbox: Opening with item', item);
