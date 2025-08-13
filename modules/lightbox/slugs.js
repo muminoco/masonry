@@ -104,11 +104,19 @@ export class SlugManager {
           this.currentSlug = slugValue;
         } else {
           // Update browser URL without page reload
-          window.history.pushState({ 
+          const state = {
             masonrySlug: slugValue,
             masonryCombined: combinedValue,
-            originalUrl: this.originalUrl 
-          }, '', nextUrl);
+            originalUrl: this.originalUrl
+          };
+          // If a slug is already active (we're switching items while open),
+          // replace the current entry instead of pushing a new one to avoid
+          // requiring multiple closes to return to the original URL.
+          if (this.currentSlug) {
+            window.history.replaceState(state, '', nextUrl);
+          } else {
+            window.history.pushState(state, '', nextUrl);
+          }
           this.currentSlug = slugValue;
         }
         
