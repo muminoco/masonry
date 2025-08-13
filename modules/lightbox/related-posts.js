@@ -575,9 +575,14 @@ const DEFAULT_RELATED_CONFIG = {
       if (!this.sourceContainer) return;
       const children = Array.from(this.sourceContainer.children);
       children.forEach((child) => {
-        if (!child.hasAttribute('data-masonry-uid')) {
+        // Prevent users from manually setting this attribute – it's reserved for internal use
+        if (child.hasAttribute('data-masonry-item-id')) {
+          console.error('🔗 Related Posts: data-masonry-item-id is reserved for internal use. Remove this attribute from items.');
+          return;
+        }
+        if (!child.hasAttribute('data-masonry-item-id')) {
           this.uidCounter += 1;
-          child.setAttribute('data-masonry-uid', `${this.containerUid}-${this.uidCounter}`);
+          child.setAttribute('data-masonry-item-id', `${this.containerUid}-${this.uidCounter}`);
         }
       });
     }
@@ -589,7 +594,7 @@ const DEFAULT_RELATED_CONFIG = {
       if (!item) return null;
       const slug = item.getAttribute(`data-${SLUG_CONFIG.valueAttribute}`);
       if (slug && slug.trim()) return slug.trim();
-      const uid = item.getAttribute('data-masonry-uid');
+      const uid = item.getAttribute('data-masonry-item-id');
       if (uid && uid.trim()) return uid.trim();
       return null;
     }
@@ -606,7 +611,7 @@ const DEFAULT_RELATED_CONFIG = {
         }
       } catch (e) {}
       // Try UID first
-      const byUid = this.sourceContainer.querySelector(`[data-masonry-uid="${escaped}"]`);
+      const byUid = this.sourceContainer.querySelector(`[data-masonry-item-id="${escaped}"]`);
       if (byUid) return byUid;
       // Then slug
       return this.sourceContainer.querySelector(`[data-${SLUG_CONFIG.valueAttribute}="${escaped}"]`);

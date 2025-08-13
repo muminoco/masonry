@@ -2,7 +2,7 @@ Masonry Layout System – Lightbox & Related Posts (WIP Notes)
 
 Overview
 - Single lightbox per masonry container. Related grid is layout-only and delegates clicks back to the main lightbox.
-- Identity-based exclusion for related posts: prefer slug (data-masonry-slug-value) else internal UID (data-masonry-uid). UIDs are auto-assigned; no user config required.
+- Identity-based exclusion for related posts: prefer slug (data-masonry-slug-value) else internal UID (data-masonry-item-id). UIDs are auto-assigned; no user config required.
 
 Behavior
 - Opening an item sets a view=<prefix>/<slug> query param when slugging is enabled.
