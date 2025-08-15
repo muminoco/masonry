@@ -12,6 +12,7 @@
  */
 
 import { RELATED_POSTS_CONFIG } from './config.js';
+import { SLUG_CONFIG } from './config.js';
 
 const DEFAULT_RELATED_CONFIG = {
   ...RELATED_POSTS_CONFIG
@@ -32,10 +33,13 @@ const DEFAULT_RELATED_CONFIG = {
       this.currentItem = null;
       this.clonedMasonryInstance = null;
       this.noResultsElement = null;
+      this.uidCounter = 0;
+      this.containerUid = 'm' + Math.random().toString(36).slice(2, 8);
       
       // Bound methods for event listeners
       this.handleLightboxOpen = this.handleLightboxOpen.bind(this);
       this.handleLightboxClose = this.handleLightboxClose.bind(this);
+      this.handleRelatedClick = this.handleRelatedClick.bind(this);
       
       this.init();
     }
@@ -62,6 +66,9 @@ const DEFAULT_RELATED_CONFIG = {
         return;
       }
       
+      // Ensure internal identities for source items (works even without slugs)
+      this.ensureItemUids();
+
       // Setup event listeners
       this.setupEventListeners();
       this.setupHooks();
@@ -117,6 +124,11 @@ const DEFAULT_RELATED_CONFIG = {
       // Listen for lightbox events on the masonry container
       this.masonry.container.addEventListener('masonry:lightboxOpen', this.handleLightboxOpen);
       this.masonry.container.addEventListener('masonry:lightboxClose', this.handleLightboxClose);
+
+      // Delegate clicks from the related target back to the main lightbox
+      if (this.targetContainer) {
+        this.targetContainer.addEventListener('click', this.handleRelatedClick);
+      }
     }
   
     /**
@@ -159,6 +171,9 @@ const DEFAULT_RELATED_CONFIG = {
     populateRelatedPosts(currentItem) {
       console.log('🔗 Related Posts: Populating related posts for item', currentItem);
       
+      // Ensure newly added items have internal IDs
+      this.ensureItemUids();
+
       // Dispatch before populate event
       this.dispatchEvent('masonry:relatedPostsBeforePopulate', {
         currentItem,
@@ -206,7 +221,13 @@ const DEFAULT_RELATED_CONFIG = {
       // Exclude current item if configured
       const excludeCurrent = this.getExcludeCurrentSetting();
       if (excludeCurrent) {
-        candidates = candidates.filter(item => item !== currentItem);
+        const currentKey = this.getIdentityKey(currentItem);
+        if (currentKey) {
+          candidates = candidates.filter(item => this.getIdentityKey(item) !== currentKey);
+        } else {
+          // Fallback to DOM reference if identity is unavailable
+          candidates = candidates.filter(item => item !== currentItem);
+        }
       }
       
       // Get filter attributes from current item
@@ -389,12 +410,11 @@ const DEFAULT_RELATED_CONFIG = {
     inheritPlugins() {
       if (!this.clonedMasonryInstance) return;
       
-      // Check if original masonry has lightbox
-      if (this.masonry.lightbox && window.MasonryLightboxPlugin) {
-        console.log('🔗 Related Posts: Inheriting lightbox plugin');
-        
+      // Default: DO NOT attach lightbox to cloned grid to avoid dual instances
+      const enableCloneLightbox = this.masonry.container.getAttribute(`${this.attributePrefix}-related-lightbox`) === 'true';
+      if (enableCloneLightbox && this.masonry.lightbox && window.MasonryLightboxPlugin) {
+        console.log('🔗 Related Posts: Inheriting lightbox plugin (opt-in)');
         try {
-          // Initialize lightbox on cloned instance
           this.clonedMasonryInstance.use(window.MasonryLightboxPlugin, {
             escapeKey: true,
             backdrop: true,
@@ -532,6 +552,9 @@ const DEFAULT_RELATED_CONFIG = {
       // Remove event listeners
       this.masonry.container.removeEventListener('masonry:lightboxOpen', this.handleLightboxOpen);
       this.masonry.container.removeEventListener('masonry:lightboxClose', this.handleLightboxClose);
+      if (this.targetContainer) {
+        this.targetContainer.removeEventListener('click', this.handleRelatedClick);
+      }
       
       // Clear related posts
       this.clearRelatedPosts();
@@ -543,6 +566,77 @@ const DEFAULT_RELATED_CONFIG = {
       this.noResultsElement = null;
       
       console.log('✅ Related Posts: Cleanup complete');
+    }
+
+    /**
+     * Ensure each source item has an internal UID for identity matching when slug is absent
+     */
+    ensureItemUids() {
+      if (!this.sourceContainer) return;
+      const children = Array.from(this.sourceContainer.children);
+      children.forEach((child) => {
+        // Prevent users from manually setting this attribute – it's reserved for internal use
+        if (child.hasAttribute('data-masonry-item-id')) {
+          console.error('🔗 Related Posts: data-masonry-item-id is reserved for internal use. Remove this attribute from items.');
+          return;
+        }
+        if (!child.hasAttribute('data-masonry-item-id')) {
+          this.uidCounter += 1;
+          child.setAttribute('data-masonry-item-id', `${this.containerUid}-${this.uidCounter}`);
+        }
+      });
+    }
+
+    /**
+     * Return canonical identity key for an item: prefer slug, else UID
+     */
+    getIdentityKey(item) {
+      if (!item) return null;
+      const slug = item.getAttribute(`data-${SLUG_CONFIG.valueAttribute}`);
+      if (slug && slug.trim()) return slug.trim();
+      const uid = item.getAttribute('data-masonry-item-id');
+      if (uid && uid.trim()) return uid.trim();
+      return null;
+    }
+
+    /**
+     * Find the original source item given an identity key
+     */
+    findSourceItemByIdentity(key) {
+      if (!key || !this.sourceContainer) return null;
+      let escaped = key;
+      try {
+        if (typeof CSS !== 'undefined' && CSS.escape) {
+          escaped = CSS.escape(key);
+        }
+      } catch (e) {}
+      // Try UID first
+      const byUid = this.sourceContainer.querySelector(`[data-masonry-item-id="${escaped}"]`);
+      if (byUid) return byUid;
+      // Then slug
+      return this.sourceContainer.querySelector(`[data-${SLUG_CONFIG.valueAttribute}="${escaped}"]`);
+    }
+
+    /**
+     * Delegate clicks within the related target to the main lightbox using identity mapping
+     */
+    handleRelatedClick(event) {
+      if (!this.targetContainer) return;
+      const relatedItem = event.target ? event.target.closest(`.${this.config.relatedItemClass}`) : null;
+      if (!relatedItem || !this.targetContainer.contains(relatedItem)) return;
+
+      const key = this.getIdentityKey(relatedItem);
+      if (!key) return;
+      const sourceItem = this.findSourceItemByIdentity(key);
+      if (!sourceItem || !this.masonry.lightbox) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        this.masonry.lightbox.openItem(sourceItem);
+      } catch (e) {
+        console.warn('🔗 Related Posts: Failed to open source item from related click:', e);
+      }
     }
   
     /**
