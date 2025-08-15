@@ -2,9 +2,9 @@
  * Lightweight redirect embed for Webflow
  *
  * Behavior:
- * - If the current URL contains the configured query parameter (default: "itemSlug"),
+ * - If the current URL contains the configured query parameter (default: "view"),
  *   redirect to "/<prefix>/<slug>" (built from the parameter's value), preserving origin.
- * - Example: https://site.com/some-page?itemSlug=curation%2F12345 → https://site.com/curation/12345
+ * - Example: https://site.com/some-page?view=curation%2F12345 → https://site.com/curation/12345
  * - Handles URL decoding and safely encodes each path segment in the redirect target.
  *
  * Usage in Webflow:
@@ -16,7 +16,7 @@
  */
 (function () {
   try {
-    var PARAM_NAME = 'itemSlug';
+    var PARAM_NAME = 'view';
 
     // If you changed SLUG_CONFIG.slugQueryParam in your project, update PARAM_NAME to match.
 
